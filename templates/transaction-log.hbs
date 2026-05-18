@@ -1,0 +1,173 @@
+{{!--
+  Quartermaster — Transaction Log Window (step 12)
+
+  Layout:
+    1. Stats strip (total, by category, failures)
+    2. Filter controls (category select, phase select, search input,
+       refresh button, clear button GM-only)
+    3. Entry list (grouped by requestId; click to expand)
+--}}
+
+<div class="quartermaster-log-root">
+
+  {{!-- Stats strip --}}
+  <header class="qm-log-stats">
+    <span class="qm-log-stat" title="Total log entries">
+      <i class="fa-solid fa-list"></i>
+      <strong>{{stats.total}}</strong> total
+    </span>
+    {{#if stats.byCategory.transfer}}
+    <span class="qm-log-stat" title="Item transfers">
+      <i class="fa-solid fa-right-left"></i>
+      {{stats.byCategory.transfer}} transfers
+    </span>
+    {{/if}}
+    {{#if stats.byCategory.currency}}
+    <span class="qm-log-stat" title="Currency changes">
+      <i class="fa-solid fa-coins"></i>
+      {{stats.byCategory.currency}} currency
+    </span>
+    {{/if}}
+    {{#if stats.byCategory.resource}}
+    <span class="qm-log-stat" title="Resource changes">
+      <i class="fa-solid fa-flask"></i>
+      {{stats.byCategory.resource}} resources
+    </span>
+    {{/if}}
+    {{#if stats.failures}}
+    <span class="qm-log-stat qm-log-stat-error" title="Failed operations">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      {{stats.failures}} failures
+    </span>
+    {{/if}}
+  </header>
+
+  {{!-- Filter controls --}}
+  <div class="qm-log-controls">
+    <div class="qm-log-control">
+      <label for="qm-log-category-filter">Category</label>
+      <select id="qm-log-category-filter" name="category">
+        <option value="all" {{#if categorySelected.all}}selected{{/if}}>All</option>
+        <option value="transfer" {{#if categorySelected.transfer}}selected{{/if}}>Transfers</option>
+        <option value="currency" {{#if categorySelected.currency}}selected{{/if}}>Currency</option>
+        <option value="resource" {{#if categorySelected.resource}}selected{{/if}}>Resources</option>
+        <option value="hidden" {{#if categorySelected.hidden}}selected{{/if}}>Hidden</option>
+        <option value="import" {{#if categorySelected.import}}selected{{/if}}>Import</option>
+        <option value="unknown" {{#if categorySelected.unknown}}selected{{/if}}>Legacy</option>
+      </select>
+    </div>
+
+    <div class="qm-log-control">
+      <label for="qm-log-phase-filter">Status</label>
+      <select id="qm-log-phase-filter" name="phase">
+        <option value="all" {{#if phaseSelected.all}}selected{{/if}}>All</option>
+        <option value="commit" {{#if phaseSelected.commit}}selected{{/if}}>Committed</option>
+        <option value="failed" {{#if phaseSelected.failed}}selected{{/if}}>Failed</option>
+        <option value="denied" {{#if phaseSelected.denied}}selected{{/if}}>Denied</option>
+        <option value="claim" {{#if phaseSelected.claim}}selected{{/if}}>Claims</option>
+      </select>
+    </div>
+
+    <div class="qm-log-control qm-log-control-search">
+      <label for="qm-log-search">Search</label>
+      <input
+        type="text"
+        id="qm-log-search"
+        name="search"
+        placeholder="item, actor, user..."
+        value="{{filters.search}}"
+        autocomplete="off"
+      />
+    </div>
+
+    <div class="qm-log-control-buttons">
+      <button type="button" data-action="refresh" title="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+      {{#if isGM}}
+      <button type="button" data-action="clear-log" title="Clear all log entries (GM only)" class="qm-log-danger">
+        <i class="fa-solid fa-trash"></i>
+      </button>
+      {{/if}}
+    </div>
+  </div>
+
+  {{!-- Count summary --}}
+  <div class="qm-log-summary">
+    {{#if filterActive}}
+      Showing <strong>{{groupCount}}</strong> grouped
+      operation{{#unless singleGroup}}s{{/unless}}
+      ({{filteredEntryCount}} of {{grandTotal}} entries)
+    {{else}}
+      Showing all <strong>{{groupCount}}</strong> grouped
+      operation{{#unless singleGroup}}s{{/unless}}
+      ({{grandTotal}} entries)
+    {{/if}}
+  </div>
+
+  {{!-- Entry list --}}
+  <div class="qm-log-list-wrapper">
+    {{#if hasEntries}}
+      <ol class="qm-log-list">
+        {{#each groups}}
+          <li
+            class="qm-log-row{{#if this.hasError}} qm-log-row-error{{/if}}{{#if this.expanded}} qm-log-row-expanded{{/if}} qm-log-cat-{{this.category}}"
+            data-request-id="{{this.requestId}}"
+          >
+            <div class="qm-log-row-main">
+              <i class="qm-log-icon {{this.icon}}"></i>
+              <div class="qm-log-info">
+                <div class="qm-log-title">{{this.title}}</div>
+                <div class="qm-log-meta">
+                  <span class="qm-log-user">{{this.userName}}</span>
+                  {{#if this.description}}
+                    <span class="qm-log-description">&middot; {{this.description}}</span>
+                  {{/if}}
+                </div>
+              </div>
+              <div class="qm-log-side">
+                {{#if this.amount}}
+                  <div class="qm-log-amount">{{this.amount}}</div>
+                {{/if}}
+                <div class="qm-log-time" title="{{this.timestampFormatted}}">
+                  {{this.timeAgo}}
+                </div>
+              </div>
+            </div>
+
+            {{#if this.expanded}}
+              <div class="qm-log-detail">
+                <div class="qm-log-detail-entries">
+                  {{#each this.entries}}
+                    <div class="qm-log-detail-entry qm-log-phase-{{this.phase}}">
+                      <span class="qm-log-phase-badge">{{this.phase}}</span>
+                      <span class="qm-log-detail-time" title="{{this.timestampFormatted}}">{{this.timeAgo}}</span>
+                      {{#if this.errorMessage}}
+                        <span class="qm-log-error-msg">{{this.errorMessage}}</span>
+                      {{/if}}
+                    </div>
+                  {{/each}}
+                </div>
+                {{#if @root.isGM}}
+                  <div class="qm-log-detail-id">
+                    <i class="fa-solid fa-hashtag"></i>
+                    <code>{{this.requestId}}</code>
+                  </div>
+                {{/if}}
+              </div>
+            {{/if}}
+          </li>
+        {{/each}}
+      </ol>
+    {{else}}
+      <p class="qm-log-empty">
+        {{#if filterActive}}
+          No entries match the current filters.
+        {{else}}
+          The transaction log is empty.
+        {{/if}}
+      </p>
+    {{/if}}
+  </div>
+
+</div>

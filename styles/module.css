@@ -1,0 +1,1700 @@
+/* ============================================================
+ * Quartermaster — Stylesheet
+ *
+ * All selectors are scoped under either:
+ *   - `.quartermaster-sidebar-actions`  (the injected sidebar container)
+ *   - `.quartermaster`                  (the applied class on every popup)
+ *
+ * No unscoped utility classes, no universal selectors. This is intentional
+ * to prevent bleed-through into character sheets (Tidy 5e in particular)
+ * and to leave other modules' styles untouched.
+ * ============================================================ */
+
+
+/* ------------------------------------------------------------
+ * Sidebar buttons (Actors directory)
+ * ------------------------------------------------------------ */
+
+.quartermaster-sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 6px 0;
+  padding: 0;
+}
+
+.quartermaster-sidebar-actions .quartermaster-sidebar-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.9em;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quartermaster-sidebar-actions .quartermaster-sidebar-btn:hover {
+  filter: brightness(1.15);
+}
+
+.quartermaster-sidebar-actions .quartermaster-sidebar-btn:active {
+  filter: brightness(0.95);
+}
+
+.quartermaster-sidebar-actions .quartermaster-sidebar-btn:focus-visible {
+  outline: 2px solid var(--color-warm-2, #c9a96e);
+  outline-offset: 1px;
+}
+
+.quartermaster-sidebar-actions .quartermaster-sidebar-btn i {
+  flex-shrink: 0;
+}
+
+.quartermaster-sidebar-actions .quartermaster-sidebar-btn span {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+/* ------------------------------------------------------------
+ * Popup placeholder content (steps 5 and 14 placeholders)
+ * Removed when step 6 + step 14 ship real content.
+ * ------------------------------------------------------------ */
+
+.quartermaster .quartermaster-placeholder {
+  padding: 16px 20px;
+  line-height: 1.5;
+}
+
+.quartermaster .quartermaster-placeholder h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 4px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border-light-tertiary, rgba(0, 0, 0, 0.15));
+}
+
+.quartermaster .quartermaster-placeholder h3 {
+  margin: 14px 0 4px 0;
+  font-size: 1em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+.quartermaster .quartermaster-placeholder p {
+  margin: 6px 0;
+}
+
+.quartermaster .quartermaster-placeholder .quartermaster-placeholder-tagline {
+  font-style: italic;
+  opacity: 0.75;
+  margin-bottom: 14px;
+}
+
+.quartermaster .quartermaster-placeholder ul {
+  margin: 6px 0 6px 18px;
+  padding: 0;
+}
+
+.quartermaster .quartermaster-placeholder ul li {
+  margin: 2px 0;
+}
+
+.quartermaster .quartermaster-placeholder code.quartermaster-id {
+  font-size: 0.85em;
+  opacity: 0.7;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.quartermaster .quartermaster-placeholder .quartermaster-placeholder-note {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-warm-2, #c9a96e);
+  background: rgba(0, 0, 0, 0.04);
+  font-size: 0.9em;
+  opacity: 0.85;
+  border-radius: 0 4px 4px 0;
+}
+
+.quartermaster .quartermaster-placeholder .quartermaster-placeholder-status,
+.quartermaster .quartermaster-placeholder .quartermaster-placeholder-roadmap {
+  margin: 8px 0;
+}
+
+
+/* ------------------------------------------------------------
+ * Inventory popup (step 6 read-only render)
+ * ------------------------------------------------------------ */
+
+.quartermaster .quartermaster-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.quartermaster .quartermaster-empty-state i {
+  font-size: 2em;
+  margin-bottom: 8px;
+  color: var(--color-level-warning, #ff9800);
+}
+
+.quartermaster .quartermaster-inventory-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 0.95em;
+}
+
+/* Header strip with capacity bar and total gp */
+.quartermaster .qm-inv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+}
+
+.quartermaster .qm-inv-capacity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.quartermaster .qm-inv-capacity.qm-over-capacity .qm-capacity-text {
+  color: var(--color-level-warning, #c0392b);
+  font-weight: 600;
+}
+
+.quartermaster .qm-capacity-text {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.quartermaster .qm-capacity-bar {
+  flex: 1;
+  height: 6px;
+  min-width: 60px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.quartermaster .qm-capacity-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-warm-2, #c9a96e);
+  transition: width 0.2s ease-out;
+}
+
+.quartermaster .qm-over-capacity .qm-capacity-fill {
+  background: var(--color-level-warning, #c0392b);
+}
+
+.quartermaster .qm-inv-total-gp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Currency rail */
+.quartermaster .qm-currency-rail {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.quartermaster .qm-currency-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.quartermaster .qm-currency-label {
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.quartermaster .qm-currency-value {
+  font-size: 1.15em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tint each currency tile subtly */
+.quartermaster .qm-currency-pp { border-top: 2px solid #b0c4de; }
+.quartermaster .qm-currency-gp { border-top: 2px solid #d4af37; }
+.quartermaster .qm-currency-ep { border-top: 2px solid #a8b8b0; }
+.quartermaster .qm-currency-sp { border-top: 2px solid #c0c0c0; }
+.quartermaster .qm-currency-cp { border-top: 2px solid #b87333; }
+
+/* Section header (Resources, Items) */
+.quartermaster .qm-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  padding-bottom: 4px;
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.75;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.quartermaster .qm-section-count {
+  margin-left: auto;
+  font-size: 0.9em;
+  opacity: 0.6;
+}
+
+/* Resources list */
+.quartermaster .qm-resource-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quartermaster .qm-resource-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 3px;
+}
+
+.quartermaster .qm-resource-row:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.quartermaster .qm-resource-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+.quartermaster .qm-resource-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quartermaster .qm-resource-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 2.5em;
+  text-align: right;
+}
+
+/* Items list */
+.quartermaster .qm-items {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.quartermaster .qm-item-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.quartermaster .qm-item-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+
+.quartermaster .qm-item-row:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.quartermaster .qm-item-row.qm-unidentified {
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.quartermaster .qm-item-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.quartermaster .qm-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quartermaster .qm-item-quantity {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  min-width: 2.5em;
+  text-align: right;
+}
+
+.quartermaster .qm-item-weight {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+  opacity: 0.6;
+  min-width: 4em;
+  text-align: right;
+}
+
+.quartermaster .qm-empty {
+  margin: 12px 0;
+  padding: 12px;
+  text-align: center;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* Footer with version and actor ID */
+.quartermaster .qm-inv-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 6px;
+  font-size: 0.75em;
+  opacity: 0.5;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.quartermaster .qm-inv-footer code {
+  font-size: 0.95em;
+  background: none;
+  padding: 0;
+}
+
+/* Entry size variants */
+.quartermaster .quartermaster-inventory-root.qm-entry-compact {
+  font-size: 0.85em;
+}
+.quartermaster .qm-entry-compact .qm-item-icon,
+.quartermaster .qm-entry-compact .qm-resource-icon {
+  width: 24px;
+  height: 24px;
+}
+.quartermaster .qm-entry-compact .qm-item-row,
+.quartermaster .qm-entry-compact .qm-resource-row {
+  padding: 2px 6px;
+}
+
+.quartermaster .quartermaster-inventory-root.qm-entry-large {
+  font-size: 1.05em;
+}
+.quartermaster .qm-entry-large .qm-item-icon,
+.quartermaster .qm-entry-large .qm-resource-icon {
+  width: 40px;
+  height: 40px;
+}
+.quartermaster .qm-entry-large .qm-item-row,
+.quartermaster .qm-entry-large .qm-resource-row {
+  padding: 6px 8px;
+}
+
+
+/* ------------------------------------------------------------
+ * Drag-drop interactions (step 9)
+ * ------------------------------------------------------------ */
+
+/* Drop target highlight when something draggable is over the popup */
+.quartermaster .quartermaster-inventory-root.qm-drop-target {
+  outline: 2px dashed var(--color-warm-2, #c9a96e);
+  outline-offset: -6px;
+  background: rgba(201, 169, 110, 0.06);
+}
+
+/* Item rows show grab cursor when draggable */
+.quartermaster .qm-item-row[draggable="true"] {
+  cursor: grab;
+}
+.quartermaster .qm-item-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Visual fade for the item being dragged */
+.quartermaster .qm-item-row.qm-being-dragged {
+  opacity: 0.4;
+}
+
+/* While any drag is in flight, suppress text selection globally so the
+   drag visual doesn't get cluttered by accidental highlight */
+body.qm-dragging {
+  user-select: none;
+}
+
+
+/* ------------------------------------------------------------
+ * Currency tile +/- buttons (step 10)
+ * ------------------------------------------------------------ */
+
+.quartermaster .qm-currency-buttons {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.quartermaster .qm-currency-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--color-text-primary, inherit);
+  cursor: pointer;
+  font-size: 0.75em;
+  line-height: 1;
+  transition: background 0.1s ease-out, border-color 0.1s ease-out;
+}
+
+.quartermaster .qm-currency-btn:hover {
+  background: rgba(0, 0, 0, 0.12);
+  border-color: rgba(0, 0, 0, 0.3);
+}
+
+.quartermaster .qm-currency-btn:active {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.quartermaster .qm-currency-btn.qm-currency-add:hover {
+  background: rgba(60, 140, 60, 0.18);
+  border-color: rgba(60, 140, 60, 0.5);
+  color: #2d6a2d;
+}
+
+.quartermaster .qm-currency-btn.qm-currency-remove:hover {
+  background: rgba(180, 60, 60, 0.18);
+  border-color: rgba(180, 60, 60, 0.5);
+  color: #8a2a2a;
+}
+
+
+/* ------------------------------------------------------------
+ * Currency amount dialog (step 10)
+ * ------------------------------------------------------------ */
+
+.qm-currency-dialog {
+  padding: 4px 2px;
+}
+
+.qm-currency-dialog .qm-current-balance {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+.qm-currency-dialog .qm-quick-picks-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.qm-currency-dialog .qm-pick-label {
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin-right: 4px;
+}
+
+.qm-currency-dialog .qm-pick {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+
+.qm-currency-dialog .qm-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.qm-currency-dialog .qm-custom-row label {
+  flex: 0 0 auto;
+  font-size: 0.9em;
+}
+
+.qm-currency-dialog .qm-custom-row input[type="number"] {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+
+/* ------------------------------------------------------------
+ * Transaction Log window (step 12)
+ * ------------------------------------------------------------ */
+
+.quartermaster .quartermaster-log-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 0.95em;
+}
+
+/* Stats strip */
+.quartermaster .qm-log-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+.quartermaster .qm-log-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quartermaster .qm-log-stat strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.quartermaster .qm-log-stat-error {
+  color: var(--color-level-warning, #c0392b);
+  font-weight: 600;
+}
+
+/* Filter controls */
+.quartermaster .qm-log-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.quartermaster .qm-log-control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quartermaster .qm-log-control-search {
+  flex: 1;
+  min-width: 140px;
+}
+
+.quartermaster .qm-log-control label {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+
+.quartermaster .qm-log-control select,
+.quartermaster .qm-log-control input {
+  height: 28px;
+  padding: 2px 6px;
+  font-size: 0.9em;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+}
+
+.quartermaster .qm-log-control-buttons {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+}
+
+.quartermaster .qm-log-control-buttons button {
+  height: 28px;
+  width: 32px;
+  padding: 0;
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.quartermaster .qm-log-control-buttons button:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.quartermaster .qm-log-control-buttons .qm-log-danger:hover {
+  background: rgba(180, 60, 60, 0.2);
+  border-color: rgba(180, 60, 60, 0.5);
+  color: #8a2a2a;
+}
+
+/* Count summary */
+.quartermaster .qm-log-summary {
+  font-size: 0.8em;
+  opacity: 0.7;
+  padding: 0 2px;
+}
+
+/* Entry list */
+.quartermaster .qm-log-list-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.quartermaster .qm-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.quartermaster .qm-log-row {
+  display: block;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  transition: background 0.1s ease-out;
+}
+
+.quartermaster .qm-log-row:last-child {
+  border-bottom: none;
+}
+
+.quartermaster .qm-log-row:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.quartermaster .qm-log-row.qm-log-row-expanded {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.quartermaster .qm-log-row.qm-log-row-error {
+  border-left: 3px solid var(--color-level-warning, #c0392b);
+  padding-left: 7px;
+}
+
+.quartermaster .qm-log-row-main {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.quartermaster .qm-log-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  opacity: 0.85;
+}
+
+.quartermaster .qm-log-row-error .qm-log-icon {
+  color: var(--color-level-warning, #c0392b);
+  background: rgba(192, 57, 43, 0.1);
+}
+
+/* Category-specific icon tints */
+.quartermaster .qm-log-cat-transfer .qm-log-icon {
+  color: #4a7ab8;
+}
+.quartermaster .qm-log-cat-currency .qm-log-icon {
+  color: #c9a96e;
+}
+.quartermaster .qm-log-cat-resource .qm-log-icon {
+  color: #6a9d6a;
+}
+
+.quartermaster .qm-log-info {
+  min-width: 0;
+}
+
+.quartermaster .qm-log-title {
+  font-weight: 600;
+  font-size: 0.95em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quartermaster .qm-log-meta {
+  font-size: 0.8em;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quartermaster .qm-log-user {
+  font-weight: 500;
+}
+
+.quartermaster .qm-log-side {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.quartermaster .qm-log-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.quartermaster .qm-log-time {
+  font-size: 0.75em;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
+/* Expanded detail */
+.quartermaster .qm-log-detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+
+.quartermaster .qm-log-detail-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quartermaster .qm-log-detail-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quartermaster .qm-log-phase-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.quartermaster .qm-log-phase-claim .qm-log-phase-badge {
+  background: rgba(74, 122, 184, 0.2);
+  color: #2a4a7a;
+}
+
+.quartermaster .qm-log-phase-commit .qm-log-phase-badge {
+  background: rgba(60, 140, 60, 0.18);
+  color: #2d6a2d;
+}
+
+.quartermaster .qm-log-phase-failed .qm-log-phase-badge {
+  background: rgba(192, 57, 43, 0.18);
+  color: #8a2a2a;
+}
+
+.quartermaster .qm-log-detail-time {
+  font-size: 0.85em;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.quartermaster .qm-log-error-msg {
+  font-style: italic;
+  color: var(--color-level-warning, #c0392b);
+}
+
+.quartermaster .qm-log-detail-id {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 0.75em;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quartermaster .qm-log-detail-id code {
+  background: none;
+  padding: 0;
+}
+
+/* Empty state */
+.quartermaster .qm-log-empty {
+  padding: 30px;
+  text-align: center;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* Denied phase badge */
+.quartermaster .qm-log-phase-denied .qm-log-phase-badge {
+  background: rgba(140, 100, 40, 0.2);
+  color: #6e4f1e;
+}
+
+
+/* ------------------------------------------------------------
+ * Currency approval dialog (step 13)
+ * ------------------------------------------------------------ */
+
+.qm-approval-request {
+  padding: 4px 2px;
+}
+
+.qm-approval-lead {
+  margin: 0 0 12px;
+  font-size: 1.05em;
+  line-height: 1.4;
+}
+
+.qm-approval-balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 12px;
+  margin: 10px 0;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.qm-approval-balance-label {
+  display: block;
+  font-size: 0.75em;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.qm-approval-balance > div {
+  text-align: center;
+}
+
+.qm-approval-balance strong {
+  font-size: 1.2em;
+  font-variant-numeric: tabular-nums;
+}
+
+.qm-approval-arrow {
+  opacity: 0.4;
+  font-size: 1.1em;
+}
+
+.qm-approval-reason {
+  margin: 8px 0;
+  padding: 6px 10px;
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.03);
+  border-left: 2px solid rgba(0, 0, 0, 0.1);
+}
+
+.qm-approval-warning {
+  margin: 8px 0;
+  padding: 6px 10px;
+  font-size: 0.9em;
+  color: #8a2a2a;
+  background: rgba(192, 57, 43, 0.1);
+  border-left: 3px solid #c0392b;
+  border-radius: 2px;
+}
+
+.qm-approval-warning i {
+  margin-right: 4px;
+}
+
+.qm-approval-countdown {
+  margin-top: 12px;
+  padding: 6px 10px;
+  text-align: center;
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  opacity: 0.85;
+}
+
+.qm-approval-countdown i {
+  margin-right: 4px;
+  opacity: 0.6;
+}
+
+.qm-approval-countdown .qm-countdown-value {
+  font-weight: 600;
+}
+
+
+/* ------------------------------------------------------------
+ * Custom resources — inventory popup rows (step 14)
+ * ------------------------------------------------------------ */
+
+.quartermaster .qm-resource-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quartermaster .qm-resource-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 3px;
+}
+
+.quartermaster .qm-resource-row.qm-resource-at-max .qm-resource-value {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+.quartermaster .qm-resource-row.qm-resource-at-zero .qm-resource-value {
+  opacity: 0.5;
+}
+
+.quartermaster .qm-resource-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.quartermaster .qm-resource-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quartermaster .qm-resource-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.quartermaster .qm-resource-buttons {
+  display: flex;
+  gap: 2px;
+}
+
+.quartermaster .qm-resource-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  font-size: 0.75em;
+}
+
+.quartermaster .qm-resource-btn:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.quartermaster .qm-resource-btn.qm-resource-add:hover {
+  background: rgba(60, 140, 60, 0.18);
+  border-color: rgba(60, 140, 60, 0.5);
+  color: #2d6a2d;
+}
+
+.quartermaster .qm-resource-btn.qm-resource-remove:hover {
+  background: rgba(180, 60, 60, 0.18);
+  border-color: rgba(180, 60, 60, 0.5);
+  color: #8a2a2a;
+}
+
+
+/* ------------------------------------------------------------
+ * Loot Prep window — resources management (step 14)
+ * ------------------------------------------------------------ */
+
+.quartermaster .quartermaster-loot-prep-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 10px 12px;
+  height: 100%;
+}
+
+.quartermaster .qm-prep-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quartermaster .qm-prep-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.quartermaster .qm-prep-section-header h3 {
+  margin: 0;
+  font-size: 1.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quartermaster .qm-prep-add {
+  padding: 4px 10px;
+  font-size: 0.85em;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  background: rgba(60, 140, 60, 0.12);
+  cursor: pointer;
+}
+
+.quartermaster .qm-prep-add:hover {
+  background: rgba(60, 140, 60, 0.22);
+}
+
+.quartermaster .qm-prep-add i {
+  margin-right: 4px;
+}
+
+.quartermaster .qm-prep-empty {
+  padding: 20px;
+  text-align: center;
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.quartermaster .quartermaster-loot-prep-root .qm-resource-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quartermaster .quartermaster-loot-prep-root .qm-resource-row {
+  grid-template-columns: 40px 1fr auto auto;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.quartermaster .quartermaster-loot-prep-root .qm-resource-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.quartermaster .qm-resource-desc {
+  font-size: 0.8em;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.quartermaster .qm-resource-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.quartermaster .qm-resource-actions button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.quartermaster .qm-resource-actions button:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.quartermaster .qm-prep-danger:hover {
+  background: rgba(180, 60, 60, 0.2) !important;
+  border-color: rgba(180, 60, 60, 0.5) !important;
+  color: #8a2a2a;
+}
+
+
+/* ------------------------------------------------------------
+ * Resource edit dialog (step 14)
+ * ------------------------------------------------------------ */
+
+.qm-resource-edit .form-group {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qm-resource-edit label {
+  font-size: 0.85em;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.qm-resource-edit input[type="text"],
+.qm-resource-edit input[type="number"],
+.qm-resource-edit textarea {
+  padding: 4px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font-family: inherit;
+}
+
+.qm-resource-edit textarea {
+  resize: vertical;
+  min-height: 50px;
+}
+
+.qm-resource-icon-row {
+  margin-bottom: 12px;
+}
+
+.qm-resource-icon-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qm-resource-icon-preview {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.qm-resource-icon-control input[type="text"] {
+  flex: 1;
+}
+
+.qm-resource-icon-control .qm-pick-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+}
+
+.qm-resource-icon-control .qm-pick-icon:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.qm-resource-numbers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.qm-resource-numbers > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ================================================================
+   Step 15 — Hidden Items (Loot Prep popup)
+   All selectors scoped under .quartermaster-loot-prep-root
+   ================================================================ */
+
+/* Section header bulk-action buttons */
+.quartermaster-loot-prep-root .qm-hidden-bulk-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.quartermaster-loot-prep-root .qm-prep-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  font-size: 0.78em;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.quartermaster-loot-prep-root .qm-prep-secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Badge showing hidden item count */
+.quartermaster-loot-prep-root .qm-hidden-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  font-size: 0.72em;
+  font-weight: 600;
+  line-height: 1.4;
+  border-radius: 10px;
+  background: rgba(200, 160, 50, 0.3);
+  color: #d4aa30;
+  border: 1px solid rgba(200, 160, 50, 0.4);
+  vertical-align: middle;
+}
+
+/* Item list */
+.quartermaster-loot-prep-root .qm-hidden-item-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 36px;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-row {
+  display: grid;
+  grid-template-columns: 22px 32px 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-select {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #c8a032;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-info {
+  overflow: hidden;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-source {
+  font-size: 0.72em;
+  opacity: 0.55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 0.75em;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-actions button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+
+.quartermaster-loot-prep-root .qm-prep-reveal {
+  color: #60a860 !important;
+  border-color: rgba(96, 168, 96, 0.35) !important;
+}
+
+.quartermaster-loot-prep-root .qm-prep-reveal:hover {
+  background: rgba(96, 168, 96, 0.18) !important;
+}
+
+.quartermaster-loot-prep-root .qm-prep-danger {
+  color: #c05050 !important;
+  border-color: rgba(192, 80, 80, 0.35) !important;
+}
+
+.quartermaster-loot-prep-root .qm-prep-danger:hover {
+  background: rgba(192, 80, 80, 0.18) !important;
+}
+
+/* Drop zone — empty state */
+.quartermaster-loot-prep-root .qm-hidden-drop-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px 16px;
+  border: 2px dashed rgba(200, 160, 50, 0.35);
+  border-radius: 5px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(200, 160, 50, 0.04);
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 90px;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-drop-empty i {
+  font-size: 1.8em;
+  opacity: 0.5;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-drop-empty p {
+  margin: 0;
+  font-size: 0.85em;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-drop-hint {
+  font-size: 0.75em !important;
+  opacity: 0.6;
+}
+
+/* Drop zone — list state (items present, zone wraps the list) */
+.quartermaster-loot-prep-root .qm-hidden-item-list.qm-hidden-drop-zone {
+  padding: 2px;
+  border: 2px dashed transparent;
+  border-radius: 5px;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+/* Hint bar below filled list */
+.quartermaster-loot-prep-root .qm-hidden-drop-hint-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  font-size: 0.74em;
+  opacity: 0.45;
+  margin-top: 4px;
+  border: 1px dashed rgba(200, 160, 50, 0.2);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* Drag-over highlight for BOTH drop zone variants */
+.quartermaster-loot-prep-root .qm-drop-hover {
+  border-color: rgba(200, 160, 50, 0.7) !important;
+  background: rgba(200, 160, 50, 0.08) !important;
+}
+
+/* ================================================================
+   Step 16 — Inventory GM Actions (trash/hide buttons + context menu)
+   ================================================================ */
+
+/* GM action buttons on item rows — hidden by default, show on row hover */
+.quartermaster-inventory-root .qm-item-row .qm-item-gm-actions {
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+}
+
+.quartermaster-inventory-root .qm-item-row:hover .qm-item-gm-actions {
+  opacity: 1;
+}
+
+.quartermaster-inventory-root .qm-item-gm-actions button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0,0,0,0.2);
+  border-radius: 3px;
+  background: rgba(255,255,255,0.05);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.75em;
+  line-height: 1;
+}
+
+.quartermaster-inventory-root .qm-item-hide-btn {
+  color: rgba(200,160,50,0.85) !important;
+  border-color: rgba(200,160,50,0.3) !important;
+}
+
+.quartermaster-inventory-root .qm-item-hide-btn:hover {
+  background: rgba(200,160,50,0.15) !important;
+}
+
+.quartermaster-inventory-root .qm-item-delete-btn {
+  color: rgba(192,80,80,0.85) !important;
+  border-color: rgba(192,80,80,0.3) !important;
+}
+
+.quartermaster-inventory-root .qm-item-delete-btn:hover {
+  background: rgba(192,80,80,0.18) !important;
+}
+
+/* Right-click context menu */
+.qm-context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 190px;
+  padding: 4px 0;
+  background: var(--color-bg-option, #1a1a2e);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 5px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.55);
+  font-family: inherit;
+  font-size: 0.85em;
+}
+
+.qm-context-menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.qm-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  color: inherit;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.qm-context-menu-item:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.qm-context-menu-item i {
+  width: 14px;
+  text-align: center;
+  opacity: 0.75;
+}
+
+.qm-context-menu-danger {
+  color: #c05050 !important;
+}
+
+.qm-context-menu-danger:hover {
+  background: rgba(192,80,80,0.12) !important;
+}
+
+/* Inventory item row layout: add column for GM actions */
+.quartermaster-inventory-root .qm-item-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ================================================================
+   Step 17 — Preferences dialog form
+   ================================================================ */
+
+.qm-pref-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 2px;
+}
+
+.qm-pref-fieldset {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 0;
+}
+
+.qm-pref-fieldset legend {
+  font-size: 0.85em;
+  font-weight: 600;
+  padding: 0 4px;
+  opacity: 0.8;
+}
+
+.qm-pref-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.qm-pref-radio input[type="radio"] {
+  accent-color: #c8a032;
+  margin: 0;
+}
+
+.qm-pref-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.qm-pref-row label {
+  font-size: 0.85em;
+  font-weight: 500;
+  min-width: 130px;
+}
+
+.qm-pref-select {
+  flex: 1;
+  padding: 3px 6px;
+  font-size: 0.85em;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 3px;
+  background: rgba(0,0,0,0.2);
+  color: inherit;
+}
+
+.qm-pref-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.qm-pref-checkbox input[type="checkbox"] {
+  accent-color: #c8a032;
+  margin: 0;
+}
+
+/* ================================================================
+   Step 19 — Dropdown contrast fix (all Quartermaster selects)
+   ================================================================ */
+
+/* Ensure select dropdown options have readable contrast on all platforms */
+.quartermaster select,
+.quartermaster select option {
+  background: var(--color-bg-option, #1a1a2e);
+  color: var(--color-text-primary, #e0ddd4);
+}
+
+.quartermaster select option:checked,
+.quartermaster select option:hover {
+  background: rgba(200, 160, 50, 0.25);
+}
+
+/* Preferences dialog selects */
+.qm-pref-select,
+.qm-pref-select option {
+  background: var(--color-bg-option, #1a1a2e) !important;
+  color: var(--color-text-primary, #e0ddd4) !important;
+}

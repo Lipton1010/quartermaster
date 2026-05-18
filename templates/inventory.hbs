@@ -1,0 +1,167 @@
+{{!--
+  Quartermaster — Shared Party Inventory layout (step 6 read-only render)
+
+  Sections, in fixed order:
+    1. Header strip (capacity indicator + gp total)
+    2. Currency rail (5 coin types)
+    3. Custom resources (if any exist)
+    4. Items list (filtered to NOT hidden)
+
+  All interactive controls (drag-drop, +/− buttons, right-click menus) land
+  in later steps; this template renders the current state read-only.
+--}}
+
+{{#unless backingActorPresent}}
+  <div class="quartermaster-empty-state">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <p>Backing actor not initialized. Reload the world.</p>
+  </div>
+{{else}}
+<div class="quartermaster-inventory-root {{entrySizeClass}}">
+
+  {{!-- Header: capacity and total gp --}}
+  <header class="qm-inv-header">
+    <div class="qm-inv-capacity{{#if capacity.over}} qm-over-capacity{{/if}}">
+      <i class="fa-solid fa-weight-hanging"></i>
+      {{#if capacity.enforced}}
+        <span class="qm-capacity-text">
+          {{capacity.current}} / {{capacity.limit}} lbs
+        </span>
+        <span class="qm-capacity-bar" aria-hidden="true">
+          <span class="qm-capacity-fill" style="width: {{capacity.percent}}%"></span>
+        </span>
+      {{else}}
+        <span class="qm-capacity-text">
+          {{capacity.current}} lbs (unlimited)
+        </span>
+      {{/if}}
+    </div>
+
+    <div class="qm-inv-total-gp" title="Total currency value in gp equivalent">
+      <i class="fa-solid fa-coins"></i>
+      {{totals.gpEquivalent}} gp
+    </div>
+  </header>
+
+  {{!-- Currency rail --}}
+  {{#if hasCurrencies}}
+  <section class="qm-inv-section qm-currency-rail">
+    {{#each currencies}}
+      <div class="qm-currency-tile qm-currency-{{this.type}}" data-currency="{{this.type}}">
+        <span class="qm-currency-label">{{this.symbol}}</span>
+        <span class="qm-currency-value">{{this.value}}</span>
+        <div class="qm-currency-buttons">
+          <button type="button"
+                  class="qm-currency-btn qm-currency-remove"
+                  data-action="currency-remove"
+                  data-currency="{{this.type}}"
+                  title="Remove {{this.symbol}} (shift-click to remove 1)">
+            <i class="fa-solid fa-minus"></i>
+          </button>
+          <button type="button"
+                  class="qm-currency-btn qm-currency-add"
+                  data-action="currency-add"
+                  data-currency="{{this.type}}"
+                  title="Add {{this.symbol}} (shift-click to add 1)">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+      </div>
+    {{/each}}
+  </section>
+  {{/if}}
+
+  {{!-- Custom resources --}}
+  {{#if hasResources}}
+  <section class="qm-inv-section qm-resources">
+    <h3 class="qm-section-header">
+      <i class="fa-solid fa-flask"></i> Resources
+    </h3>
+    <ul class="qm-resource-list">
+      {{#each resources}}
+        <li class="qm-resource-row{{#if this.atMax}} qm-resource-at-max{{/if}}{{#if this.atZero}} qm-resource-at-zero{{/if}}"
+            data-resource-id="{{this.id}}"
+            title="{{this.description}}">
+          <img src="{{this.icon}}" alt="" class="qm-resource-icon" />
+          <span class="qm-resource-name">{{this.name}}</span>
+          <span class="qm-resource-value">{{this.displayValue}}</span>
+          <div class="qm-resource-buttons">
+            <button type="button"
+                    class="qm-resource-btn qm-resource-remove"
+                    data-action="resource-remove"
+                    data-resource-id="{{this.id}}"
+                    title="Remove (shift-click to remove 1)">
+              <i class="fa-solid fa-minus"></i>
+            </button>
+            <button type="button"
+                    class="qm-resource-btn qm-resource-add"
+                    data-action="resource-add"
+                    data-resource-id="{{this.id}}"
+                    title="Add (shift-click to add 1)">
+              <i class="fa-solid fa-plus"></i>
+            </button>
+          </div>
+        </li>
+      {{/each}}
+    </ul>
+  </section>
+  {{/if}}
+
+  {{!-- Items list --}}
+  <section class="qm-inv-section qm-items">
+    <h3 class="qm-section-header">
+      <i class="fa-solid fa-box"></i> Items
+      <span class="qm-section-count">({{itemCount}})</span>
+    </h3>
+
+    {{#if hasItems}}
+      <ol class="qm-item-list">
+        {{#each items}}
+          <li class="qm-item-row {{#unless this.isIdentified}}qm-unidentified{{/unless}}"
+              data-item-id="{{this.id}}"
+              data-item-type="{{this.type}}">
+            <img src="{{this.img}}" alt="" class="qm-item-icon" />
+            <span class="qm-item-name">{{this.name}}</span>
+            <span class="qm-item-quantity">
+              {{#if this.showQuantity}}×{{this.quantity}}{{/if}}
+            </span>
+            <span class="qm-item-weight" title="{{this.weight}} lb each">
+              {{this.totalWeight}} lb
+            </span>
+            {{#if ../isGM}}
+            <div class="qm-item-gm-actions">
+              <button type="button"
+                      class="qm-item-hide-btn"
+                      data-action="hide-item"
+                      data-item-id="{{this.id}}"
+                      title="Hide (send to Loot Prep)">
+                <i class="fa-solid fa-eye-slash"></i>
+              </button>
+              <button type="button"
+                      class="qm-item-delete-btn"
+                      data-action="delete-item"
+                      data-item-id="{{this.id}}"
+                      data-item-name="{{this.name}}"
+                      title="Delete item from vault">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+            {{/if}}
+          </li>
+        {{/each}}
+      </ol>
+    {{else}}
+      <p class="qm-empty">The vault is empty.</p>
+    {{/if}}
+  </section>
+
+  {{!-- Footer diagnostics --}}
+  <footer class="qm-inv-footer">
+    <span class="qm-inv-version">v{{moduleVersion}}</span>
+    <span class="qm-inv-actor" title="Backing actor: {{backingActorName}}">
+      <code>{{backingActorId}}</code>
+    </span>
+  </footer>
+
+</div>
+{{/unless}}

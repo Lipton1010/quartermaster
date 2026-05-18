@@ -1,0 +1,49 @@
+{
+  "id": "quartermaster",
+  "title": "Quartermaster",
+  "description": "Shared party inventory and currency tracker for D&D 5e on Foundry VTT. A richer alternative to fvtt-party-resources, featuring drag-and-drop item sharing, multi-currency tracking, GM loot prep, approval workflows for currency changes, and a full transaction log.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14",
+    "maximum": "14"
+  },
+  "authors": [
+    {
+      "name": "Paul Miscavage",
+      "url": "https://github.com/Lipton1010"
+    }
+  ],
+  "esmodules": [
+    "scripts/module.js"
+  ],
+  "styles": [
+    "styles/module.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system",
+        "compatibility": {
+          "minimum": "5.0.0",
+          "verified": "5.3.3"
+        }
+      }
+    ]
+  },
+  "url": "https://github.com/Lipton1010/quartermaster",
+  "manifest": "https://github.com/Lipton1010/quartermaster/releases/latest/download/module.json",
+  "download": "https://github.com/Lipton1010/quartermaster/releases/latest/download/module.zip",
+  "readme": "https://github.com/Lipton1010/quartermaster/blob/main/README.md",
+  "bugs": "https://github.com/Lipton1010/quartermaster/issues",
+  "changelog": "https://github.com/Lipton1010/quartermaster/blob/main/CHANGELOG.md",
+  "license": "MIT"
+}

@@ -1,0 +1,143 @@
+{{!--
+  Quartermaster — GM Loot Prep Popup (step 15)
+  - Custom Resources section: list, edit, delete, add
+  - Hidden Items section: list, reveal, bulk-reveal, delete, drag-drop
+--}}
+
+<div class="quartermaster-loot-prep-root">
+
+  {{!-- ── Custom Resources ─────────────────────────────────── --}}
+  <section class="qm-prep-section qm-prep-resources">
+    <header class="qm-prep-section-header">
+      <h3>
+        <i class="fa-solid fa-flask"></i>
+        Custom Resources
+      </h3>
+      <button type="button" data-action="add-resource" class="qm-prep-add">
+        <i class="fa-solid fa-plus"></i>
+        Add Resource
+      </button>
+    </header>
+
+    {{#if hasResources}}
+      <ol class="qm-resource-list">
+        {{#each resources}}
+          <li class="qm-resource-row{{#if this.atMax}} qm-resource-at-max{{/if}}{{#if this.atZero}} qm-resource-at-zero{{/if}}"
+              data-resource-id="{{this.id}}">
+            <img class="qm-resource-icon" src="{{this.icon}}" alt="" />
+            <div class="qm-resource-info">
+              <div class="qm-resource-name">{{this.name}}</div>
+              {{#if this.description}}
+                <div class="qm-resource-desc">{{this.description}}</div>
+              {{/if}}
+            </div>
+            <div class="qm-resource-value">{{this.displayValue}}</div>
+            <div class="qm-resource-actions">
+              <button type="button"
+                      data-action="edit-resource"
+                      data-resource-id="{{this.id}}"
+                      title="Edit">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <button type="button"
+                      data-action="delete-resource"
+                      data-resource-id="{{this.id}}"
+                      title="Delete"
+                      class="qm-prep-danger">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </li>
+        {{/each}}
+      </ol>
+    {{else}}
+      <p class="qm-prep-empty">
+        No custom resources yet. Click <strong>Add Resource</strong> to create one.
+      </p>
+    {{/if}}
+  </section>
+
+  {{!-- ── Hidden Items ──────────────────────────────────────── --}}
+  <section class="qm-prep-section qm-prep-hidden">
+    <header class="qm-prep-section-header">
+      <h3>
+        <i class="fa-solid fa-eye-slash"></i>
+        Hidden Items
+        {{#if hasHiddenItems}}
+          <span class="qm-hidden-count">{{hiddenItemCount}}</span>
+        {{/if}}
+      </h3>
+      {{#if hasHiddenItems}}
+        <div class="qm-hidden-bulk-actions">
+          <button type="button" data-action="reveal-selected" class="qm-prep-secondary"
+                  title="Reveal checked items (Shift+click to announce in chat)">
+            <i class="fa-solid fa-eye"></i>
+            Reveal Selected
+          </button>
+          <button type="button" data-action="reveal-all" class="qm-prep-secondary"
+                  title="Reveal all hidden items (Shift+click to announce in chat)">
+            <i class="fa-solid fa-eye"></i>
+            Reveal All
+          </button>
+        </div>
+      {{/if}}
+    </header>
+
+    {{#if hasHiddenItems}}
+      <ol class="qm-hidden-item-list qm-hidden-drop-zone">
+        {{#each hiddenItems}}
+          <li class="qm-hidden-item-row" data-item-id="{{this.id}}">
+            <input type="checkbox"
+                   class="qm-hidden-item-select"
+                   data-item-id="{{this.id}}"
+                   title="Select for bulk reveal" />
+            <img class="qm-hidden-item-img" src="{{this.img}}" alt="" />
+            <div class="qm-hidden-item-info">
+              <div class="qm-hidden-item-name">{{this.name}}</div>
+              {{#if this.sourcePack}}
+                <div class="qm-hidden-item-source">{{this.sourcePack}}</div>
+              {{/if}}
+            </div>
+            <div class="qm-hidden-item-meta">
+              <span class="qm-hidden-item-qty" title="Quantity">×{{this.qty}}</span>
+              <span class="qm-hidden-item-weight" title="Weight">{{this.weight}} lb</span>
+            </div>
+            <div class="qm-hidden-item-actions">
+              <button type="button"
+                      data-action="reveal-item"
+                      data-item-id="{{this.id}}"
+                      title="Reveal to players (Shift+click to announce in chat)"
+                      class="qm-prep-reveal">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+              <button type="button"
+                      data-action="delete-hidden-item"
+                      data-item-id="{{this.id}}"
+                      data-item-name="{{this.name}}"
+                      title="Delete without revealing"
+                      class="qm-prep-danger">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </li>
+        {{/each}}
+      </ol>
+    {{else}}
+      <div class="qm-hidden-drop-zone qm-hidden-drop-empty">
+        <i class="fa-solid fa-arrow-down-to-bracket"></i>
+        <p>Drag items from a compendium directory here to stage them as hidden loot.</p>
+        <p class="qm-hidden-drop-hint">Items staged here are invisible to players until revealed.</p>
+      </div>
+    {{/if}}
+
+    {{!-- Always show a small drop hint when list has items too --}}
+    {{#if hasHiddenItems}}
+      <div class="qm-hidden-drop-hint-bar">
+        <i class="fa-solid fa-arrow-down-to-bracket"></i>
+        Drop compendium items here to add more
+      </div>
+    {{/if}}
+
+  </section>
+
+</div>
