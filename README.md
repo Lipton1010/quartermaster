@@ -73,8 +73,6 @@ All settings are accessible via Foundry's Module Settings panel. Key options:
 
 Quartermaster is built on a claim-and-commit transaction engine with GM-authoritative writes. All mutations route through an operation coordinator with per-resource mutex locks, idempotency caching, and a socket pipeline that supports both Foundry V13+ CONFIG.queries and raw socket fallback. The backing actor is a standard Foundry Actor document with module flags — no external databases, no server-side code, no network dependencies beyond Foundry itself.
 
-For technical details, see the [architectural handoff document](docs/handoff.md) in the repository.
-
 ## License
 
 MIT — see [LICENSE](LICENSE) file.
