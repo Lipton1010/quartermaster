@@ -40,9 +40,15 @@ A simple way to think about it:
 
 ## Installation
 
-Manual installation during pre-release. Once v1.0 is published to the Foundry package repository, install via the standard module browser.
+### Standard Installation (Recommended)
+Quartermaster is available directly through the Foundry VTT package browser. 
+1. In the Foundry VTT Setup menu, navigate to the **Add-on Modules** tab.
+2. Click **Install Module**.
+3. Search for **Quartermaster** and click **Install**.
 
-Manual install: paste this manifest URL into Foundry's "Install Module" dialog: https://github.com/Lipton1010/quartermaster/releases/download/v0.1.2/module.json
+### Manual Installation
+If you need to install a specific build or are testing a pre-release version, paste this manifest URL into Foundry's "Install Module" dialog:
+`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.2/module.json`
 
 ## Compatibility
 
