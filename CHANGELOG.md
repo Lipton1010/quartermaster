@@ -5,7 +5,54 @@ All notable changes to Quartermaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — Unreleased
+> Build steps referenced in early entries are development-time milestones. Build steps 1–18 all shipped in v0.1.0; subsequent work is tracked by version going forward.
+
+
+## [Unreleased]
+
+_(Entries land here as work progresses; promoted to a dated version section on release.)_
+
+
+## [0.1.2] — 2026-05-24
+
+Major feature update.
+
+### Added
+- **Loot Prep Folders** — organize hidden loot by encounter or location
+- **Currency Loot staging** — stage GP/SP/CP entries in Loot Prep, reveal to merge into vault
+- **Compendium integration** — drag or right-click compendium items to import
+- Create Item button in inventory header
+- Sort-by dropdown in items header (A–Z, By Type with headers, Loot First, Manual)
+- Manual drag-to-reorder sorting
+- Double-click items to open their sheet
+- Drag from Loot Prep to inventory or character sheets to reveal
+- Delete Selected button for bulk deletion in Loot Prep
+- Item value display (GP/SP/CP) on all item rows
+- Hide Electrum option (per-user, also in Game Settings)
+
+### Improved
+- Always-visible GM action buttons (no hover required)
+- Drag items by their icon, not just text
+- Empty amount field in currency/resource dialogs
+- Currency rail auto-centers when EP is hidden
+- Scroll position preserved on re-render
+- Folder header accepts drops
+- No duplicate items when dragging within Loot Prep
+
+### Compatibility
+- Foundry VTT v13–v14.363
+- dnd5e 5.0.0+
+
+
+## [0.1.1] — 2026-05-19
+
+### Changed
+- Release metadata cleanup: tagged as a proper release rather than a GitHub pre-release. No functional code changes from 0.1.0.
+
+
+## [0.1.0] — 2026-05-18
+
+Initial public release. Core feature set complete through build step 18.
 
 ### Added
 - **Compendium Integration (build step 18):**
@@ -17,7 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - "Import" category added to Transaction Log filter dropdown and preferences dialog
   - `scripts/compendium-menu.js`: `registerCompendiumContextMenu()` hooks into `getCompendiumEntryContext`
   - `scripts/test-step18.js` test harness
-
 
 ### Changed (BREAKING — pre-release)
 - **Settings scope migration (build step 17):** `sortOrder`, `defaultEntrySize`, and `hideZeroBalances` changed from `scope: "world"` to `scope: "client"`. Each user now has their own value. Pre-existing off-default values will reset to the registered defaults.
@@ -116,10 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Module cache stripping: midi-qol runtime caches (advantage, disadvantage, lastSelectedTokenIds, macroCalls, cached), dae cached state, our own quartermaster flags (except `hidden` if `preserveHiddenFlag: true`)
   - Selective effect origin rewriting: effects whose origin matches the source item UUID (or starts with it for sub-references like `.ActiveEffect.X`) get their origin prefix swapped to the destination UUID; effects with unrelated origins are left untouched
   - Effects without `_id` get one pre-generated for predictable destination structure
-  - Empty namespaces (midi-qol, dae) are dropped after cache stripping
-  - `test-step7.js`: 30+ fixture-based unit tests covering ID generation, owner state, attunement number handling, module cache stripping, effect origin rewriting (exact, sub-ref, non-match, missing, empty), edge cases (no system, no effects, missing source UUID), and input immutability
-  - API additions: `sanitization` namespace with all exports, `test.runStep7Tests`
-- **Weight cache and Claim-and-Commit infrastructure (build step 8):**
+- **Weight cache and Claim-and-Commit engine (build step 8):**
   - `weight-cache.js`: per-actor cache of raw aggregate totals (`itemWeight`, `coinSum`, `coinValues`); settings-derived values like currency weight and capacity percent are computed by callers at read time so settings toggles don't require cache invalidation
   - Cache miss triggers full recompute and stores; subsequent reads return the cached object by reference
   - Invalidation hooks: `createItem`, `updateItem`, `deleteItem` (for any actor), and `updateActor` (only when `system.currency` changed); non-currency actor updates do NOT invalidate
@@ -220,19 +263,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Step 4 test updates:** test 3 (custom resource stub) now expects routing to the real pipeline with `resource-not-found` error for a fake resourceId; test 6 (idempotency) switched to `CURRENCY_CHANGE` with `delta: 0` since both currency and resource stubs have been replaced and zero-delta currency is the only remaining state-non-mutating path through the dispatcher
   - `test-step14.js`: 30+ tests covering CRUD operations (create, get, update, delete), max-clamp behavior on update, applyDelta for all paths (add, remove, insufficient, max-exceeded, zero delta noop, invalid delta, resource not found), socket pipeline integration, transaction log entry shape, and idempotency via duplicate requestId; snapshots resources flag before mutating, restores in finally block, prunes test log entries
   - API additions: `resources` namespace, `ui.openLootPrep` already existed but now opens a real UI, `test.runStep14Tests`, `test.cleanupStep14Fixtures`
-- **Weight cache and Claim-and-Commit infrastructure (build step 8):**
-  - `weight-cache.js`: per-actor in-memory cache of raw aggregate values (`itemWeight`, `coinSum`, `coinValues`); settings-derived values like currency weight and capacity percent are computed at read time so toggling `applyCurrencyWeight` doesn't require invalidation
-  - Conservative invalidation: any `createItem` / `updateItem` / `deleteItem` on the cached actor, or a `system.currency` change on `updateActor`, drops the cached entry; next read recomputes
-  - Cache exposes `getRawTotals`, `recomputeTotals`, `invalidateActor`, `invalidateAll`, `peek`, `cachedActorIds`, `size` for read paths and diagnostics
-  - `inventory-rendering.js` updated to consume the cache instead of recomputing inline on every render
-  - `claim-commit.js`: durable transaction pattern for cross-actor item moves
-  - `performEgress({ sourceItem, destActor, requestId, userId })` for bag → player: writes claim entry, deletes from source (atomic ownership on the contended bag side), creates on destination with `{ keepId: true }`, writes commit entry. Failures at any stage write a failed entry with the raw item data preserved for recovery
-  - `performIngress(...)` for player → bag: writes claim entry, creates on bag FIRST (so the accumulator has the item before the player loses theirs), then deletes from source, then writes commit. Failure mode is duplication rather than loss
-  - Both directions: sanitization runs before the claim write so the destination `_id` is known up front and recorded in the claim entry
-  - Transaction log types added under `LOG_TYPES`: `transfer.egress.claim` / `.commit` / `.failed`, and equivalent for ingress
-  - `getTransferTrace(requestId)` diagnostic returns claim, commit, and failure entries for one request, used by test verifications and the future log window
-  - GM-only entry validation: rejects non-GM callers, missing source item, missing destination actor, missing requestId
-  - `test-step8.js`: 35+ tests across two phases. Weight cache phase creates a temp actor with items and currency, exercises cache miss/hit, invalidation on every relevant document operation, and recomputeTotals semantics. Claim-and-commit phase creates bag and player actors, runs full egress and ingress transfers, verifies state on both sides, verifies sanitization was applied, verifies transaction log entries, and tests input validation throws
-  - `cleanupStep8Fixtures()` helper removes any test actors and test log entries that didn't get torn down (used by interrupted test runs)
-  - API additions: `weightCache`, `claimCommit` namespaces; `test.runStep8Tests`, `test.cleanupStep8Fixtures`
 - Sidebar injection stubs (pending step 4 of Build Sequence)
+
+
+[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.2
+[0.1.1]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.1
+[0.1.0]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.0
