@@ -96,7 +96,7 @@ async function promptResourceAmount({ resource, direction }) {
           type="number"
           id="qm-amount-input"
           name="amount"
-          value="1"
+          value=""
           min="1"
           max="999999"
           step="1"

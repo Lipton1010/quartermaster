@@ -128,6 +128,7 @@ const ICONS = {
   "currency.commit":         "fa-solid fa-coins",
   "currency.failed":         "fa-solid fa-triangle-exclamation",
   "currency.denied":         "fa-solid fa-ban",
+  "currency.revealed":       "fa-solid fa-eye",
   "resource.claim":          "fa-solid fa-flask",
   "resource.commit":         "fa-solid fa-flask",
   "resource.failed":         "fa-solid fa-triangle-exclamation",

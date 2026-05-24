@@ -94,6 +94,9 @@ export function buildInventoryContext(actor) {
     items,
     hasItems: items.length > 0,
     itemCount: items.length,
+    sortedByType: settings.sortOrder === CHOICES.SORT_ORDER.BY_TYPE,
+    sortedCustom: settings.sortOrder === CHOICES.SORT_ORDER.CUSTOM,
+    itemGroups: settings.sortOrder === CHOICES.SORT_ORDER.BY_TYPE ? groupItemsByType(items) : null,
     totals: {
       itemWeight: round2(raw.itemWeight),
       currencyWeight: round2(currencyWeight),
@@ -102,7 +105,11 @@ export function buildInventoryContext(actor) {
       applyCurrencyWeight: settings.applyCurrencyWeight
     },
     capacity,
-    settings
+    settings: {
+      ...settings,
+      sortAlpha: settings.sortOrder === CHOICES.SORT_ORDER.ALPHABETICAL || settings.sortOrder === "alphabetical",
+      sortCurrFirst: settings.sortOrder === CHOICES.SORT_ORDER.CURRENCY_FIRST || settings.sortOrder === "currencyFirst"
+    }
   };
 }
 
@@ -112,6 +119,7 @@ function readSettings() {
     capacityLimit: game.settings.get(MODULE_ID, SETTINGS.CAPACITY_LIMIT),
     applyCurrencyWeight: game.settings.get(MODULE_ID, SETTINGS.APPLY_CURRENCY_WEIGHT),
     hideZeroBalances: game.settings.get(MODULE_ID, SETTINGS.HIDE_ZERO_BALANCES),
+    hideElectrum: game.settings.get(MODULE_ID, SETTINGS.HIDE_ELECTRUM),
     sortOrder: game.settings.get(MODULE_ID, SETTINGS.SORT_ORDER),
     entrySize: game.settings.get(MODULE_ID, SETTINGS.DEFAULT_ENTRY_SIZE),
     unidentifiedDisplay: game.settings.get(MODULE_ID, SETTINGS.UNIDENTIFIED_DISPLAY)
@@ -126,6 +134,9 @@ function buildCurrencies(actor, settings) {
     name: CURRENCY_NAMES[type],
     value: source[type] ?? 0
   }));
+  if (settings.hideElectrum) {
+    rows = rows.filter(r => r.type !== "ep");
+  }
   if (settings.hideZeroBalances) {
     rows = rows.filter(r => r.value > 0);
   }
@@ -175,6 +186,11 @@ function prepareItemDisplay(item, settings) {
   const weight = resolveWeight(sys);
   const quantity = sys.quantity ?? 1;
 
+  // Price/value display
+  const priceVal = sys.price?.value ?? 0;
+  const priceDenom = sys.price?.denomination ?? "gp";
+  const priceDisplay = formatItemPrice(priceVal, priceDenom, quantity);
+
   return {
     id: item.id,
     name: displayName,
@@ -185,7 +201,10 @@ function prepareItemDisplay(item, settings) {
     showQuantity: quantity > 1,
     isIdentified,
     type: item.type ?? "other",
-    rawName: item.name
+    rawName: item.name,
+    qmSortIndex: item.getFlag?.(MODULE_ID, "sortIndex") ?? null,
+    priceDisplay,
+    hasPrice: !!priceDisplay
   };
 }
 
@@ -224,14 +243,72 @@ function sortItems(items, sortOrder) {
         const t = (a.type || "").localeCompare(b.type || "");
         return t !== 0 ? t : byName(a, b);
       });
-    case CHOICES.SORT_ORDER.CUSTOM:
-      // Manual ordering is a v1.1 feature; until then, fall through to alpha
-    case CHOICES.SORT_ORDER.ALPHABETICAL:
+
     case CHOICES.SORT_ORDER.CURRENCY_FIRST:
+      // Sort items by a priority tier: loot and consumables first (treasure-like),
+      // then everything else alphabetically. The currency rail and resources are
+      // already rendered above the items section in the template, so this sort
+      // controls item-list ordering only.
+      return items.sort((a, b) => {
+        const pa = CURRENCY_FIRST_PRIORITY[a.type] ?? 99;
+        const pb = CURRENCY_FIRST_PRIORITY[b.type] ?? 99;
+        if (pa !== pb) return pa - pb;
+        return byName(a, b);
+      });
+
+    case CHOICES.SORT_ORDER.CUSTOM:
+      // Sort by the qmSortIndex flag (set via manual reorder). Items without
+      // an index fall to the end, sorted by name.
+      return items.sort((a, b) => {
+        const ai = a.qmSortIndex ?? 999999;
+        const bi = b.qmSortIndex ?? 999999;
+        if (ai !== bi) return ai - bi;
+        return byName(a, b);
+      });
+
+    case CHOICES.SORT_ORDER.ALPHABETICAL:
     default:
       return items.sort(byName);
   }
 }
+
+/**
+ * Group sorted items by type for the "By Type" sort mode.
+ * Returns an array of {label, type, items} objects.
+ */
+function groupItemsByType(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const type = item.type || "other";
+    if (!groups.has(type)) {
+      const label = CONFIG.Item?.typeLabels?.[type]
+        ? game.i18n.localize(CONFIG.Item.typeLabels[type])
+        : type.charAt(0).toUpperCase() + type.slice(1);
+      groups.set(type, { label, type, items: [] });
+    }
+    groups.get(type).items.push(item);
+  }
+  return Array.from(groups.values());
+}
+
+/**
+ * Priority tiers for "Currency First" sort. Lower = higher in the list.
+ * Loot and consumables (treasure-like items) sort before equipment and weapons.
+ */
+const CURRENCY_FIRST_PRIORITY = {
+  loot:        0,
+  consumable:  1,
+  container:   2,
+  tool:        3,
+  equipment:   4,
+  armor:       5,
+  weapon:      6,
+  feat:        7,
+  spell:       8,
+  class:       9,
+  subclass:    9,
+  background:  9
+};
 
 function buildCapacity(totalWeight, settings) {
   if (!settings.enforceCapacity) {
@@ -260,4 +337,27 @@ function buildCapacity(totalWeight, settings) {
 
 function round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * Convert an item's price to a readable display string.
+ * Shows total value (price × quantity). Uses GP for values ≥ 1 GP,
+ * SP for values ≥ 1 SP, CP otherwise. Never displays as EP.
+ */
+const DENOM_TO_CP = { pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 };
+
+function formatItemPrice(priceVal, denom, quantity) {
+  if (!priceVal || priceVal <= 0) return null;
+  const totalCP = priceVal * (DENOM_TO_CP[denom] ?? 100) * quantity;
+  if (totalCP <= 0) return null;
+
+  if (totalCP >= 100) {
+    const gp = totalCP / 100;
+    return Number.isInteger(gp) ? `${gp} GP` : `${round2(gp)} GP`;
+  }
+  if (totalCP >= 10) {
+    const sp = totalCP / 10;
+    return Number.isInteger(sp) ? `${sp} SP` : `${round2(sp)} SP`;
+  }
+  return `${totalCP} CP`;
 }

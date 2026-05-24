@@ -224,8 +224,8 @@
 
 /* Currency rail */
 .quartermaster .qm-currency-rail {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  display: flex;
+  justify-content: center;
   gap: 6px;
 }
 
@@ -240,6 +240,9 @@
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 4px;
   text-align: center;
+  flex: 1;
+  min-width: 60px;
+  max-width: 120px;
 }
 
 .quartermaster .qm-currency-label {
@@ -1501,13 +1504,7 @@ body.qm-dragging {
 .quartermaster-inventory-root .qm-item-row .qm-item-gm-actions {
   display: flex;
   gap: 3px;
-  opacity: 0;
-  transition: opacity 0.12s;
   flex-shrink: 0;
-}
-
-.quartermaster-inventory-root .qm-item-row:hover .qm-item-gm-actions {
-  opacity: 1;
 }
 
 .quartermaster-inventory-root .qm-item-gm-actions button {
@@ -1677,24 +1674,326 @@ body.qm-dragging {
 }
 
 /* ================================================================
-   Step 19 — Dropdown contrast fix (all Quartermaster selects)
+   Step 18 — Dropdown contrast fix (transaction log filters)
    ================================================================ */
 
-/* Ensure select dropdown options have readable contrast on all platforms */
-.quartermaster select,
-.quartermaster select option {
+.quartermaster-log .qm-log-filter-bar select,
+.quartermaster-log .qm-log-filter-bar select option {
   background: var(--color-bg-option, #1a1a2e);
   color: var(--color-text-primary, #e0ddd4);
 }
 
-.quartermaster select option:checked,
-.quartermaster select option:hover {
+.quartermaster-log .qm-log-filter-bar select option:checked {
   background: rgba(200, 160, 50, 0.25);
 }
 
-/* Preferences dialog selects */
-.qm-pref-select,
-.qm-pref-select option {
+/* ================================================================
+   v0.1.2 — Loot Prep Folders
+   ================================================================ */
+
+.quartermaster-loot-prep-root .qm-folder {
+  margin: 6px 0;
+  border: 1px solid rgba(200, 160, 50, 0.2);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.quartermaster-loot-prep-root .qm-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(200, 160, 50, 0.08);
+  font-weight: 600;
+  font-size: 0.85em;
+}
+
+.quartermaster-loot-prep-root .qm-folder-header i {
+  color: #c8a032;
+  opacity: 0.8;
+}
+
+.quartermaster-loot-prep-root .qm-folder-name {
+  flex: 1;
+}
+
+.quartermaster-loot-prep-root .qm-folder-count {
+  opacity: 0.5;
+  font-weight: 400;
+  font-size: 0.9em;
+}
+
+.quartermaster-loot-prep-root .qm-folder-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.quartermaster-loot-prep-root .qm-folder-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: 3px;
+  background: rgba(255,255,255,0.04);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.7em;
+}
+
+.quartermaster-loot-prep-root .qm-folder .qm-hidden-item-list {
+  border: none;
+  border-radius: 0;
+  min-height: 28px;
+}
+
+.quartermaster-loot-prep-root .qm-uncat-header {
+  margin: 10px 0 4px;
+  font-size: 0.8em;
+  font-weight: 600;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Currency entries in Loot Prep */
+.quartermaster-loot-prep-root .qm-hidden-currency-row {
+  background: rgba(200, 160, 50, 0.06);
+}
+
+.quartermaster-loot-prep-root .qm-hidden-currency-icon {
+  width: 32px;
+  text-align: center;
+  font-size: 1.1em;
+  color: #c8a032;
+  opacity: 0.8;
+}
+
+/* ================================================================
+   v0.1.2 — Inventory section action button (Create Item)
+   ================================================================ */
+
+.quartermaster .qm-section-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  margin-left: auto;
+  font-size: 0.72em;
+  font-weight: 500;
+  border: 1px solid rgba(0,0,0,0.2);
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.quartermaster .qm-section-action-btn:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.quartermaster .qm-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ================================================================
+   v0.1.2 fix — Dialog dropdown contrast (Add Currency, etc.)
+   ================================================================ */
+
+.dialog .qm-pref-select,
+.dialog .qm-pref-select option,
+.window-app select,
+.window-app select option {
   background: var(--color-bg-option, #1a1a2e) !important;
   color: var(--color-text-primary, #e0ddd4) !important;
+}
+
+/* ================================================================
+   v0.1.2 fix — Uncategorized drop zone visibility
+   ================================================================ */
+
+.quartermaster-loot-prep-root .qm-uncat-drop-zone {
+  border: 2px dashed rgba(200, 160, 50, 0.25);
+  border-radius: 5px;
+  min-height: 40px;
+  padding: 4px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-drop-hint-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 6px;
+  font-size: 0.8em;
+  opacity: 0.55;
+  margin-top: 6px;
+  border: 2px dashed rgba(200, 160, 50, 0.3);
+  border-radius: 5px;
+  background: rgba(200, 160, 50, 0.03);
+  cursor: default;
+  transition: border-color 0.15s, background 0.15s;
+  pointer-events: auto;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-drop-hint-bar.qm-drop-hover {
+  border-color: rgba(200, 160, 50, 0.7) !important;
+  background: rgba(200, 160, 50, 0.08) !important;
+  opacity: 1;
+}
+
+/* ================================================================
+   v0.1.2 fix — Item type group headers (By Type sort)
+   ================================================================ */
+
+.quartermaster .qm-item-type-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 3px;
+  margin-top: 6px;
+  border-bottom: 1px solid rgba(200, 160, 50, 0.25);
+  list-style: none;
+}
+
+.quartermaster .qm-item-type-header:first-child {
+  margin-top: 0;
+}
+
+.quartermaster .qm-type-label {
+  font-size: 0.78em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #c8a032;
+  opacity: 0.85;
+}
+
+.quartermaster .qm-type-count {
+  font-size: 0.72em;
+  opacity: 0.5;
+  font-weight: 400;
+}
+
+/* ================================================================
+   v0.1.2 fix — Manual sort up/down buttons
+   ================================================================ */
+
+.quartermaster .qm-item-sort-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.quartermaster .qm-sort-btn {
+  width: 20px;
+  height: 14px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0,0,0,0.15);
+  border-radius: 2px;
+  background: rgba(255,255,255,0.04);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.55em;
+  opacity: 0.6;
+}
+
+.quartermaster .qm-sort-btn:hover {
+  opacity: 1;
+  background: rgba(200, 160, 50, 0.15);
+}
+
+/* ================================================================
+   v0.1.2 fix — Inline sort selector in items header
+   ================================================================ */
+
+.quartermaster .qm-sort-select {
+  padding: 1px 4px;
+  font-size: 0.72em;
+  border: 1px solid rgba(0,0,0,0.2);
+  border-radius: 3px;
+  background: rgba(0,0,0,0.15) !important;
+  color: inherit !important;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.quartermaster .qm-sort-select option {
+  background: var(--color-bg-option, #1a1a2e) !important;
+  color: var(--color-text-primary, #e0ddd4) !important;
+}
+
+/* ================================================================
+   v0.1.2 — Drag-to-reorder insertion indicators
+   ================================================================ */
+
+.quartermaster .qm-item-row.qm-reorder-above {
+  border-top: 2px solid #c8a032 !important;
+}
+
+.quartermaster .qm-item-row.qm-reorder-below {
+  border-bottom: 2px solid #c8a032 !important;
+}
+
+.quartermaster .qm-item-row.qm-being-dragged {
+  opacity: 0.4;
+}
+
+/* Delete Selected button in Loot Prep header */
+.quartermaster-loot-prep-root .qm-prep-danger-btn {
+  color: #c05050 !important;
+  border-color: rgba(192, 80, 80, 0.35) !important;
+}
+
+.quartermaster-loot-prep-root .qm-prep-danger-btn:hover {
+  background: rgba(192, 80, 80, 0.18) !important;
+}
+
+/* ================================================================
+   v0.1.2 — Item price display
+   ================================================================ */
+
+.quartermaster .qm-item-price {
+  font-size: 0.75em;
+  color: #c8a032;
+  opacity: 0.85;
+  white-space: nowrap;
+  min-width: 45px;
+  text-align: right;
+}
+
+.quartermaster-loot-prep-root .qm-hidden-item-price {
+  font-size: 0.72em;
+  color: #c8a032;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* Item meta container: weight + price stacked in one grid cell */
+.quartermaster .qm-item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.quartermaster .qm-item-meta .qm-item-weight {
+  font-size: 0.82em;
+  opacity: 0.75;
+}
+
+.quartermaster .qm-item-meta .qm-item-price {
+  font-size: 0.72em;
 }

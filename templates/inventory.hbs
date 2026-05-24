@@ -112,43 +112,86 @@
     <h3 class="qm-section-header">
       <i class="fa-solid fa-box"></i> Items
       <span class="qm-section-count">({{itemCount}})</span>
+      <select class="qm-sort-select" name="sortOrder" title="Sort items by">
+        <option value="alphabetical" {{#if settings.sortAlpha}}selected{{/if}}>A–Z</option>
+        <option value="byType" {{#if sortedByType}}selected{{/if}}>By Type</option>
+        <option value="currencyFirst" {{#if settings.sortCurrFirst}}selected{{/if}}>Loot First</option>
+        <option value="custom" {{#if sortedCustom}}selected{{/if}}>Manual</option>
+      </select>
+      {{#if isGM}}
+      <button type="button" data-action="create-item" class="qm-section-action-btn" title="Create a new item in the vault">
+        <i class="fa-solid fa-plus"></i> Create Item
+      </button>
+      {{/if}}
     </h3>
 
     {{#if hasItems}}
       <ol class="qm-item-list">
-        {{#each items}}
-          <li class="qm-item-row {{#unless this.isIdentified}}qm-unidentified{{/unless}}"
-              data-item-id="{{this.id}}"
-              data-item-type="{{this.type}}">
-            <img src="{{this.img}}" alt="" class="qm-item-icon" />
-            <span class="qm-item-name">{{this.name}}</span>
-            <span class="qm-item-quantity">
-              {{#if this.showQuantity}}×{{this.quantity}}{{/if}}
-            </span>
-            <span class="qm-item-weight" title="{{this.weight}} lb each">
-              {{this.totalWeight}} lb
-            </span>
-            {{#if ../isGM}}
-            <div class="qm-item-gm-actions">
-              <button type="button"
-                      class="qm-item-hide-btn"
-                      data-action="hide-item"
-                      data-item-id="{{this.id}}"
-                      title="Hide (send to Loot Prep)">
-                <i class="fa-solid fa-eye-slash"></i>
-              </button>
-              <button type="button"
-                      class="qm-item-delete-btn"
-                      data-action="delete-item"
-                      data-item-id="{{this.id}}"
-                      data-item-name="{{this.name}}"
-                      title="Delete item from vault">
-                <i class="fa-solid fa-trash"></i>
-              </button>
-            </div>
-            {{/if}}
-          </li>
-        {{/each}}
+        {{#if sortedByType}}
+          {{#each itemGroups}}
+            <li class="qm-item-type-header">
+              <span class="qm-type-label">{{this.label}}</span>
+              <span class="qm-type-count">({{this.items.length}})</span>
+            </li>
+            {{#each this.items}}
+              <li class="qm-item-row {{#unless this.isIdentified}}qm-unidentified{{/unless}}"
+                  data-item-id="{{this.id}}"
+                  data-item-type="{{this.type}}">
+                <img src="{{this.img}}" alt="" class="qm-item-icon" draggable="false" />
+                <span class="qm-item-name">{{this.name}}</span>
+                <span class="qm-item-quantity">
+                  {{#if this.showQuantity}}×{{this.quantity}}{{/if}}
+                </span>
+                <div class="qm-item-meta">
+                  <span class="qm-item-weight">{{this.totalWeight}} lb</span>
+                  {{#if this.hasPrice}}<span class="qm-item-price">{{this.priceDisplay}}</span>{{/if}}
+                </div>
+                {{#if @root.isGM}}
+                <div class="qm-item-gm-actions">
+                  <button type="button" class="qm-item-hide-btn" data-action="hide-item" data-item-id="{{this.id}}" title="Hide (send to Loot Prep)">
+                    <i class="fa-solid fa-eye-slash"></i>
+                  </button>
+                  <button type="button" class="qm-item-delete-btn" data-action="delete-item" data-item-id="{{this.id}}" data-item-name="{{this.name}}" title="Delete item from vault">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                </div>
+                {{/if}}
+              </li>
+            {{/each}}
+          {{/each}}
+        {{else}}
+          {{#each items}}
+            <li class="qm-item-row {{#unless this.isIdentified}}qm-unidentified{{/unless}}"
+                data-item-id="{{this.id}}"
+                data-item-type="{{this.type}}">
+              <img src="{{this.img}}" alt="" class="qm-item-icon" draggable="false" />
+              <span class="qm-item-name">{{this.name}}</span>
+              <span class="qm-item-quantity">
+                {{#if this.showQuantity}}×{{this.quantity}}{{/if}}
+              </span>
+              <div class="qm-item-meta">
+                <span class="qm-item-weight">{{this.totalWeight}} lb</span>
+                {{#if this.hasPrice}}<span class="qm-item-price">{{this.priceDisplay}}</span>{{/if}}
+              </div>
+{{#if ../sortedCustom}}
+              <div class="qm-item-sort-actions">
+                <button type="button" class="qm-sort-btn" data-action="move-item-up" data-item-id="{{this.id}}" title="Move up"><i class="fa-solid fa-chevron-up"></i></button>
+                <button type="button" class="qm-sort-btn" data-action="move-item-down" data-item-id="{{this.id}}" title="Move down"><i class="fa-solid fa-chevron-down"></i></button>
+              </div>
+              {{/if}}
+              {{#if ../isGM}}
+              <div class="qm-item-gm-actions">
+                <button type="button" class="qm-item-hide-btn" data-action="hide-item" data-item-id="{{this.id}}" title="Hide (send to Loot Prep)">
+                  <i class="fa-solid fa-eye-slash"></i>
+                </button>
+                <button type="button" class="qm-item-delete-btn" data-action="delete-item" data-item-id="{{this.id}}" data-item-name="{{this.name}}" title="Delete item from vault">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </div>
+              {{/if}}
+            </li>
+          {{/each}}
+        {{/if}}
       </ol>
     {{else}}
       <p class="qm-empty">The vault is empty.</p>

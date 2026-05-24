@@ -108,6 +108,8 @@ import * as TransactionLogQuery from "./transaction-log-query.js";
 import * as ApprovalPolicy from "./approval-policy.js";
 import * as Resources from "./resources.js";
 import * as HiddenItems from "./hidden-items.js";
+import * as HiddenCurrency from "./hidden-currency.js";
+import * as LootPrepFolders from "./loot-prep-folders.js";
 import * as ContextMenu from "./context-menu.js";
 import { registerCompendiumContextMenu } from "./compendium-menu.js";
 
@@ -171,6 +173,8 @@ Hooks.once("ready", async () => {
       approvalPolicy: ApprovalPolicy,
       resources: Resources,
       hiddenItems: HiddenItems,
+      hiddenCurrency: HiddenCurrency,
+      lootPrepFolders: LootPrepFolders,
       contextMenu: ContextMenu,
       sanitization: Sanitization,
       weightCache: WeightCache,
@@ -205,7 +209,7 @@ Hooks.once("ready", async () => {
     };
   }
 
-  console.log(`${MODULE_TITLE} | v0.1.0 loaded (v0.1.0 ready — all steps complete)`);
+  console.log(`${MODULE_TITLE} | v0.1.0 loaded (step 18 ready)`);
 });
 
 /**

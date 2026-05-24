@@ -17,6 +17,8 @@ export const FLAGS = {
   TRANSACTION_LOG: "transactionLog",
   HIDDEN: "hidden",
   PER_ITEM_PERMISSION: "permission",
+  HIDDEN_CURRENCY: "hiddenCurrency",
+  LOOT_PREP_FOLDERS: "lootPrepFolders",
   BACKING_ACTOR_MARKER: "isQuartermasterBackingActor"
 };
 
@@ -41,6 +43,7 @@ export const SETTINGS = {
   DEFAULT_ENTRY_SIZE: "defaultEntrySize",
   SORT_ORDER: "sortOrder",
   HIDE_ZERO_BALANCES: "hideZeroBalances",
+  HIDE_ELECTRUM: "hideElectrum",
   // Transaction log
   TRANSACTION_LOG_CAP: "transactionLogCap",
   TRANSACTION_LOG_VISIBILITY: "transactionLogVisibility",

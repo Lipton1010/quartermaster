@@ -235,6 +235,15 @@ export function registerSettings() {
     range: { min: 0, max: 1000, step: 25 }
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.HIDE_ELECTRUM, {
+    name: "quartermaster.settings.hideElectrum.name",
+    hint: "quartermaster.settings.hideElectrum.hint",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false
+  });
+
   // ============================================================
   // Transaction Log Defaults (client-scope, step 17)
   // ============================================================

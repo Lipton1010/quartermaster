@@ -1,48 +1,60 @@
 /**
- * Quartermaster — GM Loot Prep App (step 15)
+ * Quartermaster — GM Loot Prep App (v0.1.2)
  *
- * The GM-side popup for staging hidden loot and managing custom party
- * resources. Step 14 implemented the Custom Resources section. Step 15
- * adds the Hidden Items section: list, reveal (single / selected / all),
- * delete, and drag-drop from compendium directories.
- *
- * GM-only at every entry point: button is hidden from non-GMs,
- * openLootPrepApp rejects non-GM calls, and action handlers all
- * double-check game.user.isGM.
+ * Features:
+ *   - Custom Resources (CRUD)
+ *   - Hidden Items (stage, reveal, delete, drag-drop)
+ *   - Hidden Currency entries (stage, reveal, delete)
+ *   - Loot Prep Folders (organize by encounter/location)
+ *   - Drag from Loot Prep to inventory/player sheets = reveal
+ *   - Double-click items to open sheet
  */
 
 import { MODULE_ID, MODULE_TITLE, FLAGS } from "../constants.js";
 import { getBackingActor } from "../backing-actor.js";
 import {
-  getResources,
-  getResource,
-  createResource,
-  updateResource,
-  deleteResource,
+  getResources, getResource, createResource, updateResource, deleteResource,
   DEFAULT_RESOURCE_ICON
 } from "../resources.js";
 import { promptResourceEdit } from "./resource-edit-dialog.js";
 import {
-  getHiddenItems,
-  setItemHidden,
-  revealItem,
-  revealItems,
-  deleteHiddenItem,
-  stageHiddenItem
+  getHiddenItems, setItemHidden, revealItem, revealItems,
+  deleteHiddenItem, stageHiddenItem
 } from "../hidden-items.js";
+import {
+  getHiddenCurrency, addHiddenCurrency, deleteHiddenCurrency,
+  revealHiddenCurrency, revealAllHiddenCurrency
+} from "../hidden-currency.js";
+import {
+  getFolders, createFolder, renameFolder, deleteFolder, setItemFolder
+} from "../loot-prep-folders.js";
 import { sanitizeItemForTransfer } from "../sanitization.js";
-import { QM_REHIDE_MARKER } from "../drag-drop.js";
+import { QM_REHIDE_MARKER, QM_LOOTPREP_DRAG_MARKER } from "../drag-drop.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
+const CURRENCY_SYMBOLS = { pp: "PP", gp: "GP", ep: "EP", sp: "SP", cp: "CP" };
+
 function escapeHtml(s) {
   if (typeof s !== "string") return "";
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+const _DENOM_TO_CP = { pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 };
+function _formatPrice(val, denom, qty) {
+  if (!val || val <= 0) return null;
+  const totalCP = val * (_DENOM_TO_CP[denom] ?? 100) * (qty || 1);
+  if (totalCP <= 0) return null;
+  if (totalCP >= 100) {
+    const gp = totalCP / 100;
+    return Number.isInteger(gp) ? `${gp} GP` : `${(Math.round(gp * 100) / 100)} GP`;
+  }
+  if (totalCP >= 10) {
+    const sp = totalCP / 10;
+    return Number.isInteger(sp) ? `${sp} SP` : `${(Math.round(sp * 100) / 100)} SP`;
+  }
+  return `${totalCP} CP`;
 }
 
 export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -57,18 +69,27 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
       resizable: true,
       minimizable: true
     },
-    position: {
-      width: 680,
-      height: 780
-    },
+    position: { width: 720, height: 820 },
     actions: {
+      // Resources
       "add-resource":       LootPrepApp.onAddResource,
       "edit-resource":      LootPrepApp.onEditResource,
       "delete-resource":    LootPrepApp.onDeleteResource,
+      // Hidden items
       "reveal-item":        LootPrepApp.onRevealItem,
       "delete-hidden-item": LootPrepApp.onDeleteHiddenItem,
       "reveal-selected":    LootPrepApp.onRevealSelected,
-      "reveal-all":         LootPrepApp.onRevealAll
+      "delete-selected":    LootPrepApp.onDeleteSelected,
+      "reveal-all":         LootPrepApp.onRevealAll,
+      // Currency loot
+      "add-currency-loot":     LootPrepApp.onAddCurrencyLoot,
+      "reveal-currency":       LootPrepApp.onRevealCurrency,
+      "delete-currency":       LootPrepApp.onDeleteCurrency,
+      // Folders
+      "create-folder":      LootPrepApp.onCreateFolder,
+      "rename-folder":      LootPrepApp.onRenameFolder,
+      "delete-folder":      LootPrepApp.onDeleteFolder,
+      "move-to-folder":     LootPrepApp.onMoveToFolder
     }
   };
 
@@ -80,72 +101,110 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   async _prepareContext(options) {
-    const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "unknown";
     const actor = getBackingActor();
     const resources = getResources();
     const hiddenItemDocs = actor ? getHiddenItems(actor) : [];
+    const hiddenCurrencyEntries = actor ? getHiddenCurrency(actor) : [];
+    const folders = actor ? getFolders(actor) : [];
 
     const hiddenItems = hiddenItemDocs.map(item => {
       const sys = item.system ?? {};
       const qty = sys.quantity ?? 1;
       const rawWeight = sys.weight?.value ?? sys.weight ?? 0;
       const weight = typeof rawWeight === "number"
-        ? (rawWeight * qty).toFixed(2).replace(/\.?0+$/, "")
-        : "—";
+        ? (rawWeight * qty).toFixed(2).replace(/\.?0+$/, "") : "—";
       const sourceUuid = item.flags?.core?.sourceId ?? item.flags?.dnd5e?.sourceId ?? null;
       const sourcePack = sourceUuid
-        ? sourceUuid.replace(/^Compendium\./, "").split(".").slice(0, 2).join(".")
-        : null;
+        ? sourceUuid.replace(/^Compendium\./, "").split(".").slice(0, 2).join(".") : null;
+      const priceDisplay = _formatPrice(sys.price?.value, sys.price?.denomination, qty);
       return {
-        id:         item.id,
-        name:       item.name ?? "(unnamed)",
-        img:        item.img ?? "icons/svg/item-bag.svg",
-        qty,
-        weight,
-        sourcePack
+        id: item.id, name: item.name ?? "(unnamed)",
+        img: item.img ?? "icons/svg/item-bag.svg",
+        qty, weight, sourcePack, priceDisplay,
+        hasPrice: !!priceDisplay,
+        folderId: item.getFlag(MODULE_ID, "lootPrepFolder") ?? null,
+        isCurrency: false
       };
     });
 
+    const currencyEntries = hiddenCurrencyEntries.map(e => ({
+      id: e.id,
+      type: e.type,
+      symbol: CURRENCY_SYMBOLS[e.type] ?? e.type.toUpperCase(),
+      amount: e.amount,
+      label: `${e.amount} ${CURRENCY_SYMBOLS[e.type] ?? e.type.toUpperCase()}`,
+      folderId: e.folderId ?? null,
+      isCurrency: true
+    }));
+
+    // Group items and currency by folder
+    const folderData = folders.map(f => {
+      const fItems = hiddenItems.filter(i => i.folderId === f.id);
+      const fCurrency = currencyEntries.filter(c => c.folderId === f.id);
+      return {
+        ...f, items: fItems, currency: fCurrency,
+        totalEntries: fItems.length + fCurrency.length
+      };
+    });
+
+    // Uncategorized (no folder)
+    const uncatItems = hiddenItems.filter(i => !i.folderId);
+    const uncatCurrency = currencyEntries.filter(c => !c.folderId);
+
+    const allHiddenCount = hiddenItems.length + currencyEntries.length;
+
     return {
-      moduleVersion,
+      moduleVersion: game.modules.get(MODULE_ID)?.version ?? "unknown",
       isGM: game.user.isGM,
       backingActorPresent: !!actor,
       backingActorName: actor?.name ?? null,
-      backingActorId:   actor?.id ?? null,
+      backingActorId: actor?.id ?? null,
       resources: resources.map(r => ({
         ...r,
-        hasMax:       r.max != null,
+        hasMax: r.max != null,
         displayValue: r.max != null ? `${r.value} / ${r.max}` : String(r.value),
-        atMax:        r.max != null && r.value >= r.max,
-        atZero:       r.value <= 0
+        atMax: r.max != null && r.value >= r.max,
+        atZero: r.value <= 0
       })),
-      hasResources:     resources.length > 0,
-      hiddenItems,
-      hasHiddenItems:   hiddenItems.length > 0,
-      hiddenItemCount:  hiddenItems.length
+      hasResources: resources.length > 0,
+      folders: folderData,
+      hasFolders: folderData.length > 0,
+      uncatItems,
+      uncatCurrency,
+      hasUncategorized: uncatItems.length > 0 || uncatCurrency.length > 0,
+      allHiddenCount,
+      hasHiddenContent: allHiddenCount > 0,
+      hiddenItemCount: hiddenItems.length,
+      hiddenCurrencyCount: currencyEntries.length
     };
+  }
+
+  _preRender(context, options) {
+    try { super._preRender(context, options); } catch {}
+    this._savedScroll = this.element?.scrollTop ?? 0;
   }
 
   async _onRender(context, options) {
     await super._onRender(context, options);
+    if (this._savedScroll > 0 && this.element) {
+      this.element.scrollTop = this._savedScroll;
+    }
     attachHiddenItemDragDrop(this);
+    _wireHiddenItemDrag(this);
+    _wireDoubleClick(this);
   }
 
-  // ----------------------------------------------------------------
-  // Custom Resources (step 14)
-  // ----------------------------------------------------------------
+  // ================================================================
+  // Resources
+  // ================================================================
 
   static async onAddResource(event, target) {
     if (!game.user.isGM) return;
     const data = await promptResourceEdit({ resource: null });
     if (!data) return;
     const created = await createResource(data);
-    if (created) {
-      ui.notifications.info(`Resource "${created.name}" created.`);
-      this.render();
-    } else {
-      ui.notifications.error(`${MODULE_TITLE}: failed to create resource.`);
-    }
+    if (created) { ui.notifications.info(`Resource "${created.name}" created.`); this.render(); }
+    else ui.notifications.error(`${MODULE_TITLE}: failed to create resource.`);
   }
 
   static async onEditResource(event, target) {
@@ -153,20 +212,12 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const id = target.dataset.resourceId;
     if (!id) return;
     const existing = getResource(id);
-    if (!existing) {
-      ui.notifications.warn(`${MODULE_TITLE}: resource no longer exists.`);
-      this.render();
-      return;
-    }
+    if (!existing) { this.render(); return; }
     const data = await promptResourceEdit({ resource: existing });
     if (!data) return;
     const updated = await updateResource(id, data);
-    if (updated) {
-      ui.notifications.info(`Resource "${updated.name}" updated.`);
-      this.render();
-    } else {
-      ui.notifications.error(`${MODULE_TITLE}: failed to update resource.`);
-    }
+    if (updated) { ui.notifications.info(`Resource "${updated.name}" updated.`); this.render(); }
+    else ui.notifications.error(`${MODULE_TITLE}: failed to update resource.`);
   }
 
   static async onDeleteResource(event, target) {
@@ -175,64 +226,45 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!id) return;
     const existing = getResource(id);
     if (!existing) { this.render(); return; }
-
     const confirmed = await DialogV2.confirm({
       window: { title: "Delete Resource" },
-      content: `<p>Delete <strong>${escapeHtml(existing.name)}</strong>?</p>
-                <p>This permanently removes the resource and its current value.</p>`,
-      rejectClose: false,
-      modal: true
+      content: `<p>Delete <strong>${escapeHtml(existing.name)}</strong>?</p>`,
+      rejectClose: false, modal: true
     });
     if (!confirmed) return;
-
     const removed = await deleteResource(id);
-    if (removed) {
-      ui.notifications.info(`Resource "${existing.name}" deleted.`);
-      this.render();
-    } else {
-      ui.notifications.error(`${MODULE_TITLE}: delete failed.`);
-    }
+    if (removed) { ui.notifications.info(`Resource "${existing.name}" deleted.`); this.render(); }
+    else ui.notifications.error(`${MODULE_TITLE}: delete failed.`);
   }
 
-  // ----------------------------------------------------------------
-  // Hidden Items (step 15)
-  // ----------------------------------------------------------------
+  // ================================================================
+  // Hidden Items
+  // ================================================================
 
   static async onRevealItem(event, target) {
     if (!game.user.isGM) return;
     const itemId = target.dataset.itemId;
     if (!itemId) return;
-    const announce = event.shiftKey;
-    const result = await revealItem(itemId, { announce });
-    if (result.status === "success") {
-      ui.notifications.info(`"${result.itemName}" revealed to the party.`);
-    } else {
-      ui.notifications.error(`${MODULE_TITLE}: reveal failed — ${result.error}`);
-    }
+    const result = await revealItem(itemId, { announce: event.shiftKey });
+    if (result.status === "success") ui.notifications.info(`"${result.itemName}" revealed.`);
+    else ui.notifications.error(`${MODULE_TITLE}: reveal failed — ${result.error}`);
     this.render();
   }
 
   static async onDeleteHiddenItem(event, target) {
     if (!game.user.isGM) return;
-    const itemId   = target.dataset.itemId;
+    const itemId = target.dataset.itemId;
     const itemName = target.dataset.itemName ?? "this item";
     if (!itemId) return;
-
     const confirmed = await DialogV2.confirm({
       window: { title: "Delete Hidden Item" },
-      content: `<p>Permanently delete <strong>${escapeHtml(itemName)}</strong>?</p>
-                <p>This removes it from the staging pool without revealing it to players.</p>`,
-      rejectClose: false,
-      modal: true
+      content: `<p>Delete <strong>${escapeHtml(itemName)}</strong>?</p>`,
+      rejectClose: false, modal: true
     });
     if (!confirmed) return;
-
     const result = await deleteHiddenItem(itemId);
-    if (result.status === "success") {
-      ui.notifications.info(`"${result.itemName}" deleted from hidden pool.`);
-    } else {
-      ui.notifications.error(`${MODULE_TITLE}: delete failed — ${result.error}`);
-    }
+    if (result.status === "success") ui.notifications.info(`"${result.itemName}" deleted.`);
+    else ui.notifications.error(`${MODULE_TITLE}: delete failed.`);
     this.render();
   }
 
@@ -240,145 +272,387 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!game.user.isGM) return;
     const checked = this.element.querySelectorAll(".qm-hidden-item-select:checked");
     const itemIds = Array.from(checked).map(cb => cb.dataset.itemId).filter(Boolean);
+    if (itemIds.length === 0) { ui.notifications.warn(`${MODULE_TITLE}: no items selected.`); return; }
+    const { successCount, failCount } = await revealItems(itemIds, { announce: event.shiftKey });
+    if (failCount === 0) ui.notifications.info(`${successCount} item(s) revealed.`);
+    else ui.notifications.warn(`${successCount} revealed, ${failCount} failed.`);
+    this.render();
+  }
+
+  static async onDeleteSelected(event, target) {
+    if (!game.user.isGM) return;
+    const checked = this.element.querySelectorAll(".qm-hidden-item-select:checked");
+    const itemIds = Array.from(checked)
+      .map(cb => cb.dataset.itemId)
+      .filter(Boolean);
     if (itemIds.length === 0) {
       ui.notifications.warn(`${MODULE_TITLE}: no items selected.`);
       return;
     }
-    const announce = event.shiftKey;
-    const { successCount, failCount } = await revealItems(itemIds, { announce });
-    if (failCount === 0) {
-      ui.notifications.info(`${successCount} item(s) revealed.`);
-    } else {
-      ui.notifications.warn(`${successCount} revealed, ${failCount} failed. See console.`);
+    const confirmed = await DialogV2.confirm({
+      window: { title: "Delete Selected" },
+      content: `<p>Permanently delete <strong>${itemIds.length}</strong> selected item(s)?</p>
+                <p>This removes them without revealing to players.</p>`,
+      rejectClose: false, modal: true
+    });
+    if (!confirmed) return;
+
+    let deleted = 0;
+    for (const id of itemIds) {
+      // Check if it's a currency entry or an item
+      const currResult = await deleteHiddenCurrency(id);
+      if (currResult.status === "success") { deleted++; continue; }
+      const itemResult = await deleteHiddenItem(id);
+      if (itemResult.status === "success") deleted++;
     }
+    ui.notifications.info(`${deleted} item(s) deleted.`);
     this.render();
   }
 
   static async onRevealAll(event, target) {
     if (!game.user.isGM) return;
-    const actor  = getBackingActor();
+    const actor = getBackingActor();
     const hidden = actor ? getHiddenItems(actor) : [];
-    if (hidden.length === 0) {
-      ui.notifications.info(`${MODULE_TITLE}: no hidden items to reveal.`);
-      return;
-    }
+    const hiddenCurr = actor ? getHiddenCurrency(actor) : [];
+    const total = hidden.length + hiddenCurr.length;
+    if (total === 0) { ui.notifications.info(`${MODULE_TITLE}: nothing to reveal.`); return; }
     const confirmed = await DialogV2.confirm({
-      window: { title: "Reveal All Hidden Items" },
-      content: `<p>Reveal all <strong>${hidden.length}</strong> hidden item(s) to the party?</p>
-                <p>They will appear in the Shared Party Inventory immediately.</p>`,
-      rejectClose: false,
-      modal: true
+      window: { title: "Reveal All" },
+      content: `<p>Reveal all <strong>${total}</strong> hidden entries?</p>`,
+      rejectClose: false, modal: true
     });
     if (!confirmed) return;
+    const announce = event.shiftKey;
+    if (hidden.length > 0) await revealItems(hidden.map(i => i.id), { announce });
+    if (hiddenCurr.length > 0) await revealAllHiddenCurrency();
+    ui.notifications.info(`All hidden entries revealed.`);
+    this.render();
+  }
 
-    const announce  = event.shiftKey;
-    const itemIds   = hidden.map(i => i.id);
-    const { successCount, failCount } = await revealItems(itemIds, { announce });
-    if (failCount === 0) {
-      ui.notifications.info(`All ${successCount} item(s) revealed.`);
-    } else {
-      ui.notifications.warn(`${successCount} revealed, ${failCount} failed. See console.`);
+  // ================================================================
+  // Currency Loot
+  // ================================================================
+
+  static async onAddCurrencyLoot(event, target) {
+    if (!game.user.isGM) return;
+    const folderId = target.dataset.folderId ?? null;
+    const result = await _promptCurrencyLoot(folderId);
+    if (result) this.render();
+  }
+
+  static async onRevealCurrency(event, target) {
+    if (!game.user.isGM) return;
+    const entryId = target.dataset.currencyId;
+    if (!entryId) return;
+    const result = await revealHiddenCurrency(entryId);
+    if (result.status !== "success") {
+      ui.notifications.error(`${MODULE_TITLE}: reveal failed — ${result.error}`);
     }
+    this.render();
+  }
+
+  static async onDeleteCurrency(event, target) {
+    if (!game.user.isGM) return;
+    const entryId = target.dataset.currencyId;
+    if (!entryId) return;
+    const result = await deleteHiddenCurrency(entryId);
+    if (result.status === "success") ui.notifications.info(`Currency entry deleted.`);
+    this.render();
+  }
+
+  // ================================================================
+  // Folders
+  // ================================================================
+
+  static async onCreateFolder(event, target) {
+    if (!game.user.isGM) return;
+    const result = await _promptFolderName("Create Folder", "");
+    if (result) {
+      const folder = await createFolder(result);
+      if (folder) this.render();
+    }
+  }
+
+  static async onRenameFolder(event, target) {
+    if (!game.user.isGM) return;
+    const folderId = target.dataset.folderId;
+    if (!folderId) return;
+    const actor = getBackingActor();
+    const folder = getFolders(actor).find(f => f.id === folderId);
+    if (!folder) { this.render(); return; }
+    const result = await _promptFolderName("Rename Folder", folder.name);
+    if (result) {
+      await renameFolder(folderId, result);
+      this.render();
+    }
+  }
+
+  static async onDeleteFolder(event, target) {
+    if (!game.user.isGM) return;
+    const folderId = target.dataset.folderId;
+    if (!folderId) return;
+    const confirmed = await DialogV2.confirm({
+      window: { title: "Delete Folder" },
+      content: `<p>Delete this folder? Items inside will move to Uncategorized.</p>`,
+      rejectClose: false, modal: true
+    });
+    if (!confirmed) return;
+    await deleteFolder(folderId);
+    this.render();
+  }
+
+  static async onMoveToFolder(event, target) {
+    if (!game.user.isGM) return;
+    const itemId = target.dataset.itemId;
+    const folderId = target.dataset.folderId || null;
+    if (!itemId) return;
+    await setItemFolder(itemId, folderId);
     this.render();
   }
 }
 
 // ============================================================
-// Drag-drop wiring for the hidden items drop zone
+// Dialogs
+// ============================================================
+
+async function _promptCurrencyLoot(folderId) {
+  const content = `
+    <form class="qm-pref-form" autocomplete="off">
+      <div class="qm-pref-row">
+        <label>Currency Type</label>
+        <select name="currencyType" class="qm-pref-select">
+          <option value="pp">Platinum (PP)</option>
+          <option value="gp" selected>Gold (GP)</option>
+          <option value="ep">Electrum (EP)</option>
+          <option value="sp">Silver (SP)</option>
+          <option value="cp">Copper (CP)</option>
+        </select>
+      </div>
+      <div class="qm-pref-row">
+        <label>Amount</label>
+        <input type="number" name="amount" min="1" value="10" style="width:100px;" />
+      </div>
+    </form>
+  `;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    let closeHookId = null;
+    let formValues = null;
+
+    const finish = async (saved) => {
+      if (resolved) return;
+      resolved = true;
+      if (closeHookId !== null) {
+        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
+      }
+      if (saved && formValues) {
+        await addHiddenCurrency(formValues.type, formValues.amount, folderId);
+      }
+      resolve(saved);
+    };
+
+    const dialog = new DialogV2({
+      window: { title: "Add Currency Loot", icon: "fa-solid fa-coins" },
+      content,
+      rejectClose: false,
+      buttons: [
+        {
+          action: "save", label: "Add", icon: "fa-solid fa-plus", default: true,
+          callback: (event, btn, dlg) => {
+            const root = dlg.element ?? dlg;
+            const type = root.querySelector("[name='currencyType']")?.value ?? "gp";
+            const amount = parseInt(root.querySelector("[name='amount']")?.value, 10);
+            if (Number.isFinite(amount) && amount > 0) {
+              formValues = { type, amount };
+            }
+          }
+        },
+        { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
+          callback: () => { formValues = null; }
+        }
+      ]
+    });
+
+    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
+      if (closedApp !== dialog) return;
+      finish(formValues !== null);
+    });
+
+    dialog.render({ force: true });
+  });
+}
+
+async function _promptFolderName(title, currentName) {
+  const content = `
+    <form class="qm-pref-form" autocomplete="off">
+      <div class="qm-pref-row">
+        <label>Folder Name</label>
+        <input type="text" name="folderName" value="${escapeHtml(currentName)}" style="flex:1;" placeholder="e.g., Dragon's Hoard" />
+      </div>
+    </form>
+  `;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    let closeHookId = null;
+    let result = null;
+
+    const finish = async (saved) => {
+      if (resolved) return;
+      resolved = true;
+      if (closeHookId !== null) {
+        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
+      }
+      resolve(saved ? result : null);
+    };
+
+    const dialog = new DialogV2({
+      window: { title, icon: "fa-solid fa-folder-plus" },
+      content,
+      rejectClose: false,
+      buttons: [
+        {
+          action: "save", label: "Save", icon: "fa-solid fa-check", default: true,
+          callback: (event, btn, dlg) => {
+            const root = dlg.element ?? dlg;
+            const name = root.querySelector("[name='folderName']")?.value?.trim();
+            if (name) result = name;
+          }
+        },
+        { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
+          callback: () => { result = null; }
+        }
+      ]
+    });
+
+    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
+      if (closedApp !== dialog) return;
+      finish(result !== null);
+    });
+
+    dialog.render({ force: true });
+  });
+}
+
+// ============================================================
+// Drag-drop wiring
 // ============================================================
 
 export function attachHiddenItemDragDrop(app) {
   const el = app?.element;
   if (!el) return;
-  const dropZone = el.querySelector(".qm-hidden-drop-zone");
-  if (!dropZone) return;
-
-  dropZone.addEventListener("dragenter", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("qm-drop-hover");
-  });
-  dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-  });
-  dropZone.addEventListener("dragleave", (e) => {
-    if (!dropZone.contains(e.relatedTarget)) {
+  const dropZones = el.querySelectorAll(".qm-hidden-drop-zone");
+  for (const dropZone of dropZones) {
+    dropZone.addEventListener("dragenter", (e) => { e.preventDefault(); dropZone.classList.add("qm-drop-hover"); });
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+    dropZone.addEventListener("dragleave", (e) => {
+      if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove("qm-drop-hover");
+    });
+    dropZone.addEventListener("drop", (e) => {
       dropZone.classList.remove("qm-drop-hover");
-    }
-  });
-  dropZone.addEventListener("drop", (e) => {
-    dropZone.classList.remove("qm-drop-hover");
-    _onHiddenItemDrop(e, app);
-  });
+      const folderId = dropZone.dataset.folderId ?? null;
+      _onHiddenItemDrop(e, app, folderId);
+    });
+  }
 }
 
-async function _onHiddenItemDrop(event, app) {
+async function _onHiddenItemDrop(event, app, folderId) {
   event.preventDefault();
   if (!game.user.isGM) return;
 
   let data;
-  try {
-    data = JSON.parse(event.dataTransfer.getData("text/plain"));
-  } catch {
-    console.warn(`${MODULE_TITLE} | hidden drop: could not parse drag data`);
-    return;
-  }
+  try { data = JSON.parse(event.dataTransfer.getData("text/plain")); }
+  catch { return; }
 
   const uuid = data.uuid ?? null;
-  if (!uuid) {
-    ui.notifications.warn(`${MODULE_TITLE}: drop a compendium item onto the Hidden Items zone.`);
-    return;
-  }
+  if (!uuid) return;
 
   const actor = getBackingActor();
-  if (!actor) {
-    ui.notifications.error(`${MODULE_TITLE}: no backing actor configured.`);
+  if (!actor) { ui.notifications.error(`${MODULE_TITLE}: no backing actor.`); return; }
+
+  // Loot Prep internal drag: item already hidden, just move to folder
+  if (data[QM_LOOTPREP_DRAG_MARKER]) {
+    let sourceItem;
+    try { sourceItem = await fromUuid(uuid); } catch { return; }
+    if (!sourceItem || sourceItem.parent?.id !== actor.id) return;
+    const currentFolder = sourceItem.getFlag(MODULE_ID, "lootPrepFolder") ?? null;
+    if (currentFolder === folderId) return; // same folder — no-op
+    await setItemFolder(sourceItem.id, folderId);
+    ui.notifications.info(`"${sourceItem.name}" moved to ${folderId ? "folder" : "Uncategorized"}.`);
     return;
   }
 
-  // Re-hide flow: item dragged from the Shared Party Inventory (already on
-  // the backing actor). Just set the hidden flag — do NOT create a copy.
+  // Re-hide flow (from Shared Party Inventory)
   if (data[QM_REHIDE_MARKER]) {
     let sourceItem;
-    try {
-      sourceItem = await fromUuid(uuid);
-    } catch (err) {
-      ui.notifications.error(`${MODULE_TITLE}: could not resolve item — ${err?.message ?? err}`);
-      return;
-    }
-    if (!sourceItem || sourceItem.parent?.id !== actor.id) {
-      ui.notifications.warn(`${MODULE_TITLE}: item is not in the vault.`);
-      return;
-    }
+    try { sourceItem = await fromUuid(uuid); } catch { return; }
+    if (!sourceItem || sourceItem.parent?.id !== actor.id) return;
     await setItemHidden(sourceItem.id, true);
+    if (folderId) {
+      const { setItemFolder } = await import("../loot-prep-folders.js");
+      await setItemFolder(sourceItem.id, folderId);
+    }
     ui.notifications.info(`"${sourceItem.name}" moved to hidden loot pool.`);
-    // Both inventory popup and loot prep popup auto-refresh via their updateItem hooks
     return;
   }
 
-  // Compendium / world drop: load item, sanitize, create with hidden flag
+  // Compendium / world drop
   let sourceItem;
-  try {
-    sourceItem = await fromUuid(uuid);
-  } catch (err) {
-    ui.notifications.error(`${MODULE_TITLE}: could not load item — ${err?.message ?? err}`);
-    return;
-  }
+  try { sourceItem = await fromUuid(uuid); } catch { return; }
+  if (!sourceItem || sourceItem.documentName !== "Item") return;
 
-  if (!sourceItem || sourceItem.documentName !== "Item") {
-    ui.notifications.warn(`${MODULE_TITLE}: only Item documents can be staged as hidden loot.`);
-    return;
-  }
-
-  const rawData  = sourceItem.toObject();
+  const rawData = sourceItem.toObject();
   const sanitized = sanitizeItemForTransfer(rawData, actor, { sourceItemUuid: uuid });
-  const result   = await stageHiddenItem(sanitized);
-
+  const result = await stageHiddenItem(sanitized);
   if (result.status === "success") {
+    if (folderId) {
+      const { setItemFolder } = await import("../loot-prep-folders.js");
+      await setItemFolder(result.item.id, folderId);
+    }
     ui.notifications.info(`"${result.item.name}" staged as hidden loot.`);
     app.render();
-  } else {
-    ui.notifications.error(`${MODULE_TITLE}: staging failed — ${result.error}`);
+  }
+}
+
+function _wireHiddenItemDrag(app) {
+  const el = app?.element;
+  if (!el) return;
+  const rows = el.querySelectorAll(".qm-hidden-item-row[data-item-id]");
+  for (const row of rows) {
+    row.setAttribute("draggable", "true");
+    row.addEventListener("dragstart", (event) => {
+      const itemId = row.dataset.itemId;
+      if (!itemId) return;
+      const actor = getBackingActor();
+      const item = actor?.items.get(itemId);
+      if (!item) return;
+      event.dataTransfer.setData("text/plain", JSON.stringify({
+        type: "Item", uuid: item.uuid,
+        [QM_LOOTPREP_DRAG_MARKER]: true,
+        qmSourceItemUuid: item.uuid,
+        qmSourceItemName: item.name
+      }));
+      event.dataTransfer.effectAllowed = "all";
+      row.classList.add("qm-being-dragged");
+    });
+    row.addEventListener("dragend", () => row.classList.remove("qm-being-dragged"));
+  }
+}
+
+function _wireDoubleClick(app) {
+  const el = app?.element;
+  if (!el) return;
+  const rows = el.querySelectorAll(".qm-hidden-item-row[data-item-id]");
+  for (const row of rows) {
+    row.addEventListener("dblclick", (event) => {
+      if (event.target.closest("button, input")) return;
+      const itemId = row.dataset.itemId;
+      if (!itemId) return;
+      const actor = getBackingActor();
+      const item = actor?.items.get(itemId);
+      if (item) item.sheet.render(true);
+    });
   }
 }
 
@@ -400,7 +674,7 @@ export async function openLootPrepApp() {
 
 export async function closeLootPrepApp() {
   if (_instance) {
-    try { await _instance.close(); } catch { /* already closed */ }
+    try { await _instance.close(); } catch {}
     _instance = null;
   }
 }
@@ -410,7 +684,7 @@ export function isLootPrepAppOpen() {
 }
 
 // ============================================================
-// Auto-refresh hooks (resources + hidden items)
+// Auto-refresh hooks
 // ============================================================
 
 let _refreshTimer = null;
@@ -430,7 +704,10 @@ export function registerLootPrepRefreshHooks() {
   Hooks.on("updateActor", (actor, changes) => {
     const b = getBacking();
     if (!b || actor.id !== b.id) return;
-    if (foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.CUSTOM_RESOURCES}`)) {
+    if (foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.CUSTOM_RESOURCES}`) ||
+        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.HIDDEN_CURRENCY}`) ||
+        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.LOOT_PREP_FOLDERS}`) ||
+        foundry.utils.hasProperty(changes, "system.currency")) {
       scheduleLootPrepRefresh();
     }
   });
@@ -438,7 +715,8 @@ export function registerLootPrepRefreshHooks() {
   Hooks.on("updateItem", (item, changes) => {
     const b = getBacking();
     if (!b || item.parent?.id !== b.id) return;
-    if (foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.HIDDEN}`)) {
+    if (foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.HIDDEN}`) ||
+        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.lootPrepFolder`)) {
       scheduleLootPrepRefresh();
     }
   });

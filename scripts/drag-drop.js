@@ -48,6 +48,12 @@ const QM_EGRESS_MARKER = "qmEgressDrag";
  */
 export const QM_REHIDE_MARKER = "qmReHideDrag";
 
+/**
+ * Marker on drag data from the Loot Prep hidden items.
+ * The inventory drop zone checks for this to trigger a reveal.
+ */
+export const QM_LOOTPREP_DRAG_MARKER = "qmLootPrepDrag";
+
 // ============================================================
 // Inventory popup wiring (called from InventoryApp._onRender)
 // ============================================================
@@ -150,6 +156,27 @@ async function onPopupDrop(event, app) {
     return;
   }
 
+  // Loot Prep drag: item is already on the backing actor with hidden flag.
+  // Reveal it (clear hidden flag) so it appears in the inventory.
+  if (data[QM_LOOTPREP_DRAG_MARKER]) {
+    if (!game.user.isGM) return;
+    if (sourceItem.parent?.id === backingActor.id) {
+      const { setItemHidden } = await import("./hidden-items.js");
+      await setItemHidden(sourceItem.id, false);
+      ui.notifications.info(`"${sourceItem.name}" revealed to the party.`);
+      // Write a log entry
+      await writeEntry({
+        type: "hidden.revealed",
+        requestId: `qm-reveal-drag-${sourceItem.id}-${Date.now()}`,
+        userId: game.user.id,
+        itemId: sourceItem.id,
+        itemName: sourceItem.name,
+        backingActorId: backingActor.id
+      });
+      return;
+    }
+  }
+
   // Compendium / world items (no actor parent): GM-only direct import
   if (!sourceItem.parent || sourceItem.parent.documentName !== "Actor") {
     if (!game.user.isGM) {
@@ -238,6 +265,15 @@ export function registerEgressInterceptor() {
       }
     );
 
+    // Handle loot prep drags to character sheets: reveal then egress
+    if (data?.[QM_LOOTPREP_DRAG_MARKER]) {
+      handleLootPrepToSheetDrop(destActor, data).catch((err) => {
+        console.error(`${MODULE_TITLE} | Loot prep to sheet drop failed`, err);
+        ui.notifications.error(`${MODULE_TITLE}: failed to transfer item. Check the console.`);
+      });
+      return false;
+    }
+
     if (!data?.[QM_EGRESS_MARKER]) return; // not ours; let default handle
 
     handleEgressDrop(destActor, data).catch((err) => {
@@ -277,6 +313,34 @@ async function handleEgressDrop(destActor, data) {
     return; // dropped back on the vault — no-op
   }
 
+  await submitEgressRequest({ sourceItem, destActor });
+}
+
+async function handleLootPrepToSheetDrop(destActor, data) {
+  if (!data.qmSourceItemUuid) {
+    console.warn(`${MODULE_TITLE} | Loot prep drop missing source UUID`);
+    return;
+  }
+  if (!game.user.isGM) return;
+
+  const sourceItem = await fromUuid(data.qmSourceItemUuid);
+  if (!sourceItem) {
+    ui.notifications.warn(`${MODULE_TITLE}: source item no longer exists.`);
+    return;
+  }
+
+  const backingActor = getBackingActor();
+  if (sourceItem.parent?.id !== backingActor?.id) {
+    ui.notifications.warn(`${MODULE_TITLE}: source item is not in the vault.`);
+    return;
+  }
+  if (destActor.id === backingActor.id) return; // dropped back on vault — no-op
+
+  // Step 1: Reveal the item (clear hidden flag)
+  const { setItemHidden } = await import("./hidden-items.js");
+  await setItemHidden(sourceItem.id, false);
+
+  // Step 2: Now process as a normal egress
   await submitEgressRequest({ sourceItem, destActor });
 }
 

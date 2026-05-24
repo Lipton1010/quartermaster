@@ -95,6 +95,10 @@
       "logAutoExpandGroups": {
         "name": "Auto-expand Groups",
         "hint": "Expand all log entry groups when the Transaction Log opens."
+      },
+      "hideElectrum": {
+        "name": "Hide Electrum",
+        "hint": "Remove Electrum (EP) from the currency display."
       }
     },
     "choices": {
