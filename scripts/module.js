@@ -14,7 +14,9 @@ import { registerSettings } from "./settings.js";
 import {
   ensureBackingActor,
   suppressBackingActorFromDirectory,
-  preventBackingActorDeletion
+  suppressBackingActorFromUserConfig,
+  preventBackingActorDeletion,
+  preventBackingActorCharacterAssignment
 } from "./backing-actor.js";
 import { injectSidebarButtons } from "./sidebar.js";
 import {
@@ -222,6 +224,20 @@ Hooks.on("renderActorDirectory", (app, html, data) => {
   suppressBackingActorFromDirectory(app, html);
   injectSidebarButtons(app, html);
 });
+
+/**
+ * Hook: renderUserConfig
+ * Removes the Quartermaster backing actor from the Player Character selector.
+ */
+Hooks.on("renderUserConfig", (app, html, data) => {
+  suppressBackingActorFromUserConfig(app, html);
+});
+
+/**
+ * Hook: preUpdateUser
+ * Prevents the Quartermaster backing actor from being saved as a user character.
+ */
+Hooks.on("preUpdateUser", preventBackingActorCharacterAssignment);
 
 /**
  * Hook: preDeleteActor

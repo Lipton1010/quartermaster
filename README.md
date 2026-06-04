@@ -48,7 +48,7 @@ Quartermaster is available directly through the Foundry VTT package browser.
 
 ### Manual Installation
 If you need to install a specific build or are testing a pre-release version, paste this manifest URL into Foundry's "Install Module" dialog:
-`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.2/module.json`
+`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.3/module.json`
 
 ## Compatibility
 
@@ -58,7 +58,7 @@ If you need to install a specific build or are testing a pre-release version, pa
 
 ## Status
 
-**v0.1.2 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, multi-currency tracking with optional GM approval flow, custom resources, GM Loot Prep (with folders, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
+**v0.1.3 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, multi-currency tracking with optional GM approval flow, custom resources, GM Loot Prep (with folders, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
 
 ## License
 

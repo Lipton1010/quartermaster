@@ -178,6 +178,12 @@ async function runMigrations(actor) {
   await actor.setFlag(MODULE_ID, DATA_VERSION_FLAG, targetVersion);
 }
 
+function getRenderedElement(html) {
+  return (html instanceof HTMLElement) ? html
+       : (html?.[0] instanceof HTMLElement) ? html[0]
+       : null;
+}
+
 /**
  * Hook: renderActorDirectory
  *
@@ -196,9 +202,7 @@ export function suppressBackingActorFromDirectory(app, html) {
   const actor = getBackingActor();
   if (!actor) return;
 
-  const rootEl = (html instanceof HTMLElement) ? html
-                : (html?.[0] instanceof HTMLElement) ? html[0]
-                : null;
+  const rootEl = getRenderedElement(html);
   if (!rootEl) return;
 
   // V14 uses data-entry-id; earlier versions used data-document-id
@@ -213,6 +217,63 @@ export function suppressBackingActorFromDirectory(app, html) {
       el.remove();
     }
   }
+}
+
+/**
+ * Hook: renderUserConfig
+ *
+ * Foundry allows users to select any Actor where they have at least OBSERVER
+ * permission as their configured Player Character. Quartermaster gives players
+ * observer access to the backing actor so they can read shared inventory state,
+ * but the backing actor is not a real character and should never appear here.
+ *
+ * @param {UserConfig} app
+ * @param {HTMLElement|jQuery} html
+ */
+export function suppressBackingActorFromUserConfig(app, html) {
+  const actor = getBackingActor();
+  if (!actor) return;
+
+  const rootEl = getRenderedElement(html);
+  if (!rootEl) return;
+
+  const selectors = [
+    `select[name="character"] option[value="${actor.id}"]`,
+    `select[name="character"] option[value="${actor.uuid}"]`
+  ];
+
+  const optionGroups = new Set();
+  for (const selector of selectors) {
+    for (const option of rootEl.querySelectorAll(selector)) {
+      const group = option.closest("optgroup");
+      option.remove();
+      if (group) optionGroups.add(group);
+    }
+  }
+
+  for (const group of optionGroups) {
+    if (!group.querySelector("option")) group.remove();
+  }
+}
+
+/**
+ * Hook: preUpdateUser
+ *
+ * Defense-in-depth for the User Configuration UI guard. If a user update tries
+ * to assign the Quartermaster backing actor as a Player Character, clear that
+ * field while allowing the rest of the User update to continue.
+ *
+ * @param {User} user
+ * @param {object} changes
+ */
+export function preventBackingActorCharacterAssignment(user, changes) {
+  const actor = getBackingActor();
+  const selected = changes.character;
+  const selectedId = typeof selected === "string" ? selected : selected?.id;
+  if (!actor || (selectedId !== actor.id && selectedId !== actor.uuid)) return;
+
+  changes.character = null;
+  ui.notifications.warn(`${MODULE_TITLE}: the vault cannot be selected as a player character.`);
 }
 
 /**

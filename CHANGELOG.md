@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.3] - 2026-06-04
+
+### Fixed
+- Hide the Quartermaster Vault from Foundry's Player Character selector and prevent it from being saved as a user's assigned character.
+- Filter hidden loot staging and deletion entries out of player transaction log views while preserving GM audit visibility.
+- Record a GM-only staging log entry when a visible Shared Party Inventory item is moved back into GM Loot Prep.
+
 ## [0.1.2] — 2026-05-24
 
 Major feature update.
@@ -266,7 +273,8 @@ Initial public release. Core feature set complete through build step 18.
 - Sidebar injection stubs (pending step 4 of Build Sequence)
 
 
-[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.0

@@ -173,6 +173,15 @@ async function handleHideItem(itemId, app) {
   }
 
   await setItemHidden(itemId, true);
+  await writeEntry({
+    type: "hidden.staged",
+    requestId: `qm-rehide-${itemId}-${Date.now()}`,
+    userId: game.user.id,
+    itemId,
+    itemName: item.name,
+    backingActorId: actor.id,
+    visibility: "gm"
+  });
   // setItemHidden fires updateItem → inventory popup auto-refreshes via existing hook
   // and loot-prep auto-refreshes via its updateItem hook
   ui.notifications.info(`"${item.name}" moved to hidden loot pool.`);

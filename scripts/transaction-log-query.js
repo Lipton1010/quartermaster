@@ -518,15 +518,22 @@ export function canUserAccessLog(user = game.user) {
 }
 
 /**
- * Is a specific entry visible to a specific user? Currently delegates
- * entirely to canUserAccessLog: visibility is binary (all-or-nothing).
+ * Is a specific entry visible to a specific user?
  *
- * Per-entry filtering (e.g., hide other players' actions, hide hidden
- * loot prep activity) is a v1.1 enhancement; the function exists now
- * so callers don't have to refactor when that lands.
+ * GMs see the full audit log. Players may view the log only when the
+ * transactionLogVisibility setting allows it, and hidden loot prep activity is
+ * filtered so staged/deleted loot is not spoiled before the GM reveals it.
  */
 export function isEntryVisibleToUser(entry, user = game.user) {
-  return canUserAccessLog(user);
+  if (!canUserAccessLog(user)) return false;
+  if (user?.isGM) return true;
+
+  const { category, phase } = classifyEntry(entry);
+  if (category === ENTRY_CATEGORIES.HIDDEN) {
+    return phase === "revealed";
+  }
+
+  return entry?.visibility !== "gm";
 }
 
 /**
@@ -537,7 +544,13 @@ export function getVisibleEntries(user = game.user, options = {}) {
   if (!canUserAccessLog(user)) {
     return { entries: [], total: 0, hasMore: false, accessDenied: true };
   }
-  return queryEntries(options);
+
+  const source = Array.isArray(options.source)
+    ? options.source
+    : TransactionLog.readAll();
+  const visibleSource = source.filter(entry => isEntryVisibleToUser(entry, user));
+
+  return queryEntries({ ...options, source: visibleSource });
 }
 
 // ============================================================

@@ -30,6 +30,7 @@ import {
 } from "../loot-prep-folders.js";
 import { sanitizeItemForTransfer } from "../sanitization.js";
 import { QM_REHIDE_MARKER, QM_LOOTPREP_DRAG_MARKER } from "../drag-drop.js";
+import { writeEntry } from "../transaction-log.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
@@ -589,6 +590,15 @@ async function _onHiddenItemDrop(event, app, folderId) {
     try { sourceItem = await fromUuid(uuid); } catch { return; }
     if (!sourceItem || sourceItem.parent?.id !== actor.id) return;
     await setItemHidden(sourceItem.id, true);
+    await writeEntry({
+      type: "hidden.staged",
+      requestId: `qm-rehide-${sourceItem.id}-${Date.now()}`,
+      userId: game.user.id,
+      itemId: sourceItem.id,
+      itemName: sourceItem.name,
+      backingActorId: actor.id,
+      visibility: "gm"
+    });
     if (folderId) {
       const { setItemFolder } = await import("../loot-prep-folders.js");
       await setItemFolder(sourceItem.id, folderId);

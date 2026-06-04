@@ -74,13 +74,13 @@ export class TransactionLogApp extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   async _prepareContext(options) {
-    const allFormatted = Query.queryEntries({}).entries;
+    const allFormatted = Query.getVisibleEntries(game.user, {}).entries;
 
     const queryOptions = {};
     if (this.filters.category !== "all") queryOptions.category = this.filters.category;
     if (this.filters.phase !== "all") queryOptions.phase = this.filters.phase;
     if (this.filters.search) queryOptions.search = this.filters.search;
-    const filtered = Query.queryEntries(queryOptions).entries;
+    const filtered = Query.getVisibleEntries(game.user, queryOptions).entries;
 
     const groups = Query.groupByRequestId(filtered).map(g => ({
       ...g,
