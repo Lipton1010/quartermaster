@@ -22,6 +22,7 @@ import { MODULE_ID, MODULE_TITLE, FLAGS } from "./constants.js";
 import { getBackingActor } from "./backing-actor.js";
 import { setItemHidden } from "./hidden-items.js";
 import { writeEntry } from "./transaction-log.js";
+import { transferInventoryItemToActor } from "./drag-drop.js";
 
 // ============================================================
 // Internal state
@@ -50,8 +51,6 @@ function escapeHtml(s) {
  * @param {InventoryApp} app
  */
 export function attachInventoryContextMenu(app) {
-  if (!game.user.isGM) return; // players never get the menu
-
   const el = app?.element;
   if (!el) return;
 
@@ -77,8 +76,7 @@ function openContextMenu(event, row, app) {
 
   const menu = document.createElement("div");
   menu.className = "quartermaster qm-context-menu";
-  menu.innerHTML = `
-    <ul class="qm-context-menu-list">
+  const gmActions = game.user.isGM ? `
       <li class="qm-context-menu-item" data-action="hide-item" data-item-id="${escapeHtml(itemId)}">
         <i class="fa-solid fa-eye-slash"></i>
         Hide (send to Loot Prep)
@@ -87,6 +85,15 @@ function openContextMenu(event, row, app) {
         <i class="fa-solid fa-trash"></i>
         Delete Item
       </li>
+  ` : "";
+  const addLabel = game.user.isGM ? "Add to Character..." : "Add to Character";
+  menu.innerHTML = `
+    <ul class="qm-context-menu-list">
+      <li class="qm-context-menu-item" data-action="add-to-character" data-item-id="${escapeHtml(itemId)}" data-item-name="${escapeHtml(itemName)}">
+        <i class="fa-solid fa-user-plus"></i>
+        ${addLabel}
+      </li>
+      ${gmActions}
     </ul>
   `;
 
@@ -148,14 +155,127 @@ export async function handleInventoryGMAction(action, itemId, itemName, app) {
 }
 
 async function handleContextAction(action, itemId, itemName, app) {
-  if (!game.user.isGM) return;
-
   switch (action) {
-    case "hide-item":   return handleHideItem(itemId, app);
-    case "delete-item": return handleDeleteItem(itemId, itemName, app);
+    case "add-to-character": return handleAddToCharacter(itemId, app);
+    case "hide-item":        return handleHideItem(itemId, app);
+    case "delete-item":      return handleDeleteItem(itemId, itemName, app);
     default:
       console.warn(`${MODULE_TITLE} | unknown context action: ${action}`);
   }
+}
+
+function getAssignedCharacter() {
+  const character = game.user.character;
+  if (character?.documentName === "Actor") return character;
+
+  const id = typeof character === "string"
+    ? character
+    : game.user._source?.character ?? game.user.characterId ?? null;
+  return id ? game.actors.get(id) ?? null : null;
+}
+
+function getSelectableCharacters() {
+  const backingActor = getBackingActor();
+  return game.actors
+    .filter(actor => actor.type === "character" && actor.id !== backingActor?.id)
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+async function promptCharacterTarget(itemName) {
+  const characters = getSelectableCharacters();
+  if (characters.length === 0) {
+    ui.notifications.warn(`${MODULE_TITLE}: no player characters are available.`);
+    return null;
+  }
+
+  const options = characters
+    .map(actor => `<option value="${escapeHtml(actor.id)}">${escapeHtml(actor.name)}</option>`)
+    .join("");
+  const content = `
+    <form class="qm-pref-form" autocomplete="off">
+      <div class="qm-pref-row">
+        <label>Character</label>
+        <select name="targetCharacter" class="qm-pref-select">
+          ${options}
+        </select>
+      </div>
+      <p class="hint">Add <strong>${escapeHtml(itemName)}</strong> to the selected character.</p>
+    </form>
+  `;
+
+  const { DialogV2 } = foundry.applications.api;
+  return new Promise((resolve) => {
+    let resolved = false;
+    let closeHookId = null;
+    let selectedActorId = null;
+
+    const finish = (actorId) => {
+      if (resolved) return;
+      resolved = true;
+      if (closeHookId !== null) {
+        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
+      }
+      resolve(actorId ? game.actors.get(actorId) ?? null : null);
+    };
+
+    const dialog = new DialogV2({
+      window: { title: "Add to Character", icon: "fa-solid fa-user-plus" },
+      content,
+      rejectClose: false,
+      modal: true,
+      buttons: [
+        {
+          action: "add",
+          label: "Add",
+          icon: "fa-solid fa-check",
+          default: true,
+          callback: (event, btn, dlg) => {
+            const root = dlg.element ?? dlg;
+            selectedActorId = root.querySelector("[name='targetCharacter']")?.value ?? null;
+          }
+        },
+        {
+          action: "cancel",
+          label: "Cancel",
+          icon: "fa-solid fa-xmark",
+          callback: () => { selectedActorId = null; }
+        }
+      ]
+    });
+
+    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
+      if (closedApp !== dialog) return;
+      finish(selectedActorId);
+    });
+
+    dialog.render({ force: true });
+  });
+}
+
+async function handleAddToCharacter(itemId, app) {
+  const actor = getBackingActor();
+  const item = actor?.items.get(itemId);
+  const itemName = item?.name ?? "this item";
+  const character = game.user.isGM
+    ? await promptCharacterTarget(itemName)
+    : getAssignedCharacter();
+  if (!character) {
+    if (!game.user.isGM) {
+      ui.notifications.warn(`${MODULE_TITLE}: choose a player character before taking items.`);
+    }
+    return;
+  }
+
+  const canOwn = game.user.isGM
+    || character.isOwner
+    || character.testUserPermission?.(game.user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER);
+  if (!canOwn) {
+    ui.notifications.warn(`${MODULE_TITLE}: you do not own ${character.name}.`);
+    return;
+  }
+
+  const result = await transferInventoryItemToActor(itemId, character);
+  if (result?.status === "success") app?.render();
 }
 
 async function handleHideItem(itemId, app) {

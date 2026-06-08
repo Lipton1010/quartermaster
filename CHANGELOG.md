@@ -1,17 +1,23 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to Quartermaster will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> Build steps referenced in early entries are development-time milestones. Build steps 1–18 all shipped in v0.1.0; subsequent work is tracked by version going forward.
+> Build steps referenced in early entries are development-time milestones. Build steps 1â€“18 all shipped in v0.1.0; subsequent work is tracked by version going forward.
 
 
 ## [Unreleased]
 
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
+
+## [0.1.4] - 2026-06-07
+
+### Added
+- Players can right-click Shared Party Inventory items and choose **Add to Character** to transfer the item to their assigned character without dragging.
+- GMs can use **Add to Character** from the Shared Party Inventory context menu and choose the target character from a dialog.
 
 ## [0.1.3] - 2026-06-04
 
@@ -20,16 +26,16 @@ _(Entries land here as work progresses; promoted to a dated version section on r
 - Filter hidden loot staging and deletion entries out of player transaction log views while preserving GM audit visibility.
 - Record a GM-only staging log entry when a visible Shared Party Inventory item is moved back into GM Loot Prep.
 
-## [0.1.2] — 2026-05-24
+## [0.1.2] â€” 2026-05-24
 
 Major feature update.
 
 ### Added
-- **Loot Prep Folders** — organize hidden loot by encounter or location
-- **Currency Loot staging** — stage GP/SP/CP entries in Loot Prep, reveal to merge into vault
-- **Compendium integration** — drag or right-click compendium items to import
+- **Loot Prep Folders** â€” organize hidden loot by encounter or location
+- **Currency Loot staging** â€” stage GP/SP/CP entries in Loot Prep, reveal to merge into vault
+- **Compendium integration** â€” drag or right-click compendium items to import
 - Create Item button in inventory header
-- Sort-by dropdown in items header (A–Z, By Type with headers, Loot First, Manual)
+- Sort-by dropdown in items header (Aâ€“Z, By Type with headers, Loot First, Manual)
 - Manual drag-to-reorder sorting
 - Double-click items to open their sheet
 - Drag from Loot Prep to inventory or character sheets to reveal
@@ -47,17 +53,17 @@ Major feature update.
 - No duplicate items when dragging within Loot Prep
 
 ### Compatibility
-- Foundry VTT v13–v14.363
+- Foundry VTT v13â€“v14.363
 - dnd5e 5.0.0+
 
 
-## [0.1.1] — 2026-05-19
+## [0.1.1] â€” 2026-05-19
 
 ### Changed
 - Release metadata cleanup: tagged as a proper release rather than a GitHub pre-release. No functional code changes from 0.1.0.
 
 
-## [0.1.0] — 2026-05-18
+## [0.1.0] â€” 2026-05-18
 
 Initial public release. Core feature set complete through build step 18.
 
@@ -72,7 +78,7 @@ Initial public release. Core feature set complete through build step 18.
   - `scripts/compendium-menu.js`: `registerCompendiumContextMenu()` hooks into `getCompendiumEntryContext`
   - `scripts/test-step18.js` test harness
 
-### Changed (BREAKING — pre-release)
+### Changed (BREAKING â€” pre-release)
 - **Settings scope migration (build step 17):** `sortOrder`, `defaultEntrySize`, and `hideZeroBalances` changed from `scope: "world"` to `scope: "client"`. Each user now has their own value. Pre-existing off-default values will reset to the registered defaults.
 
 ### Added
@@ -91,17 +97,17 @@ Initial public release. Core feature set complete through build step 18.
   - GM-only hide / trash buttons appear on item row hover in the Shared Party Inventory
   - Right-click context menu on inventory item rows: "Hide (send to Loot Prep)" and "Delete Item"
   - Both button and context menu actions share the same underlying handler (`context-menu.js`)
-  - Hide flow: sets `flags.quartermaster.hidden = true` on the item — inventory auto-excludes it, Loot Prep auto-picks it up via existing `updateItem` hook
+  - Hide flow: sets `flags.quartermaster.hidden = true` on the item â€” inventory auto-excludes it, Loot Prep auto-picks it up via existing `updateItem` hook
   - Re-hide drag: dragging an item from Shared Party Inventory onto the Loot Prep Hidden Items drop zone re-hides it without creating a copy
-  - Delete flow: DialogV2.confirm → `deleteEmbeddedDocuments` → `hidden.deleted` log entry
+  - Delete flow: DialogV2.confirm â†’ `deleteEmbeddedDocuments` â†’ `hidden.deleted` log entry
   - `scripts/context-menu.js`: `attachInventoryContextMenu`, `handleInventoryGMAction`
   - `scripts/test-step16.js` test harness
   - `api.contextMenu` namespace exposed
 
 
 ### Added
-- **Hidden Items — GM Loot Prep (build step 15):**
-  - `scripts/hidden-items.js`: `getHiddenItems`, `setItemHidden`, `revealItem`, `revealItems`, `deleteHiddenItem`, `stageHiddenItem` — all GM-only
+- **Hidden Items â€” GM Loot Prep (build step 15):**
+  - `scripts/hidden-items.js`: `getHiddenItems`, `setItemHidden`, `revealItem`, `revealItems`, `deleteHiddenItem`, `stageHiddenItem` â€” all GM-only
   - Loot Prep popup now shows a full Hidden Items section with thumbnail, name, qty, weight, and compendium source
   - Per-row Reveal and Delete buttons; Reveal Selected and Reveal All bulk actions with confirmation dialog
   - Drag-drop from compendium directories into the Hidden Items section stages items with the hidden flag set
@@ -164,7 +170,7 @@ Initial public release. Core feature set complete through build step 18.
   - `sanitizeItemForTransfer(sourceData, destActor, options)` is the main entry; returns a new object, never mutates inputs
   - Pre-generates destination `_id` via `foundry.utils.randomID(16)` so callers can compute the destination UUID before the create fires (required for the Claim-and-Commit pattern in step 8)
   - `buildItemUuid(actor, itemId)` composes world-actor item UUIDs
-  - Owner-specific state stripping: `equipped`, `attuned` (legacy boolean), `attunement` (numeric, 2 → 1), `preparation.prepared`
+  - Owner-specific state stripping: `equipped`, `attuned` (legacy boolean), `attunement` (numeric, 2 â†’ 1), `preparation.prepared`
   - Item characteristics preserved: quantity, weight, price, rarity, identified state, current charges, damage, properties
   - Module cache stripping: midi-qol runtime caches (advantage, disadvantage, lastSelectedTokenIds, macroCalls, cached), dae cached state, our own quartermaster flags (except `hidden` if `preserveHiddenFlag: true`)
   - Selective effect origin rewriting: effects whose origin matches the source item UUID (or starts with it for sub-references like `.ActiveEffect.X`) get their origin prefix swapped to the destination UUID; effects with unrelated origins are left untouched
@@ -176,8 +182,8 @@ Initial public release. Core feature set complete through build step 18.
   - Diagnostics: `size`, `peek`, `cachedActorIds`
   - `inventory-rendering.js` updated to consume `getRawTotals` instead of looping items inline on every render
   - `claim-commit.js`: durable two-phase transfer engine with direction-specific ordering
-  - **Egress (bag → player):** delete source first, then create destination. Bag is the contended resource so atomic delete-first ensures only one race winner. If the create fails after the delete, the claim entry preserves the full item data for GM recovery
-  - **Ingress (player → bag):** create destination first, then delete source. Bag is the safe accumulator so create-first avoids losing the item. If the delete fails, the item briefly duplicates and GM can manually reconcile
+  - **Egress (bag â†’ player):** delete source first, then create destination. Bag is the contended resource so atomic delete-first ensures only one race winner. If the create fails after the delete, the claim entry preserves the full item data for GM recovery
+  - **Ingress (player â†’ bag):** create destination first, then delete source. Bag is the safe accumulator so create-first avoids losing the item. If the delete fails, the item briefly duplicates and GM can manually reconcile
   - All transfers write three categories of log entries: `*_CLAIM` (intent, with full item data), `*_COMMIT` (success), `*_FAILED` (failure with stage and error). Same `requestId` ties them together
   - Sanitization runs BEFORE the claim write so the predicted destination UUID is in the log entry
   - `createEmbeddedDocuments` always called with `{ keepId: true }` so the predicted UUID holds
@@ -200,9 +206,9 @@ Initial public release. Core feature set complete through build step 18.
   - API additions: `test.runStep9Tests`, `test.cleanupStep9Fixtures`
 - **Currency change UI and dispatcher (build step 10):**
   - `currency-buttons.js`: button click handlers and amount-picker dialog
-  - Each currency tile now shows a +/− button row below the value
+  - Each currency tile now shows a +/âˆ’ button row below the value
   - Normal click opens a DialogV2 amount picker with quick-pick buttons (1, 5, 10, 25, 100) and a custom number input
-  - Shift+click skips the dialog and applies ±1 immediately for fast small adjustments
+  - Shift+click skips the dialog and applies Â±1 immediately for fast small adjustments
   - `socket-handler.js` `stubCurrencyChange` replaced with `realCurrencyChange` that resolves the backing actor, validates currency type and delta, checks for insufficient funds, writes claim/commit transaction log entries, and updates `system.currency.<type>`; no approval flow at this stage (approval ships in step 13)
   - Zero delta is a no-op success with `noop: true` in the result envelope, so the dispatcher path can be exercised in tests without mutating vault state
   - Error codes: `no-backing-actor`, `invalid-currency-type`, `invalid-delta`, `insufficient-funds` (with `currentBalance` and `requested` in the envelope for the UI to format)
@@ -211,7 +217,7 @@ Initial public release. Core feature set complete through build step 18.
   - Egress transfer toast wording fix (step 9 holdover): was "taken from {destName}" which referenced the wrong actor; now reads "given to {destName}" which correctly names the receiver
   - `test-step4.js` updates: test 2 changed to use `delta: 0` no-op since the stub is gone; test 6 (idempotency) switched to `CUSTOM_RESOURCE_CHANGE` (still stubbed) to keep it state-non-mutating
   - `test-step10.js`: 20+ integration tests covering add, remove, no-op zero delta, insufficient-funds rejection, invalid inputs, idempotency via duplicate requestId, and transaction log entry validation; snapshots vault currency at start and restores at end so the suite leaves no persistent effects
-  - CSS additions for the button row (subtle hover states, green tint for +, red tint for −) and the dialog (current-balance display, horizontal quick-pick row, custom-amount input)
+  - CSS additions for the button row (subtle hover states, green tint for +, red tint for âˆ’) and the dialog (current-balance display, horizontal quick-pick row, custom-amount input)
   - API additions: `test.runStep10Tests`, `test.cleanupStep10Fixtures`
 - **Transaction log query and formatting infrastructure (build step 11):**
   - `transaction-log-query.js`: read-side helpers built on top of the raw write layer; no document mutations
@@ -248,7 +254,7 @@ Initial public release. Core feature set complete through build step 18.
   - Log window: new "Denied" filter option in the status dropdown; denied entries render with `fa-ban` icon, warning-tinted phase badge, and red border accent like failures
   - `transaction-log-query.js`: `ENTRY_PHASES.DENIED` added; phase rank updated so denied groups display the denied entry as the representative; stats now include `byPhase.denied` count; `hasError` is true for denied entries so the row gets the warning visual
   - `test-step13.js`: 18 tests covering free / all-required / threshold modes, threshold boundary cases (below, at, above), negative deltas in threshold mode, threshold of 0 edge case, GM auto-approve in every mode, runtime threshold changes respected, and timeout config reads; settings snapshot/restore so the suite leaves no persistent change
-  - **Bug fix from step 9/12:** transaction log commit and failed entries now carry `userId`, `sourceActorName`, `sourceItemName`, and `destActorName`; previously only the claim entries had these fields, so the log window showed "(unknown item) ← vault" / "(source) to (destination)" for grouped operations because `groupByRequestId` picks the commit (highest phase rank) as the representative and the formatter fell back to placeholder text
+  - **Bug fix from step 9/12:** transaction log commit and failed entries now carry `userId`, `sourceActorName`, `sourceItemName`, and `destActorName`; previously only the claim entries had these fields, so the log window showed "(unknown item) â† vault" / "(source) to (destination)" for grouped operations because `groupByRequestId` picks the commit (highest phase rank) as the representative and the formatter fell back to placeholder text
   - API additions: `approvalPolicy` namespace, `test.runStep13Tests`
 - **Approval dialog close-detection fix (folded into step 14):**
   - The `close` config callback on V14 DialogV2 doesn't reliably fire when the user clicks the header X button or presses Escape; the dialog DOM is removed but the callback is skipped, leaving the approval Promise unresolved until the timeout countdown fires
@@ -258,11 +264,11 @@ Initial public release. Core feature set complete through build step 18.
 - **Custom resources (build step 14):**
   - `resources.js`: CRUD module for custom resources stored as a flag array on the backing actor; schema `{ id, name, icon, value, max, description, createdAt, order }`; GM-only writes; `applyDelta(id, delta)` validates bounds (insufficient-resource, max-exceeded) and returns a structured envelope
   - `socket-handler.js`: `stubCustomResourceChange` replaced with `realResourceChange` that validates the payload, calls `Resources.applyDelta`, writes claim/commit/failed transaction log entries, no approval flow at this stage (resources are GM-curated)
-  - `resource-buttons.js`: +/− button handlers for the inventory popup; shift+click applies ±1 immediately, normal click opens an amount picker dialog with quick-picks (1, 2, 3, 5, 10) and a custom number input; uses the closeDialogV2 hook for reliable close detection
+  - `resource-buttons.js`: +/âˆ’ button handlers for the inventory popup; shift+click applies Â±1 immediately, normal click opens an amount picker dialog with quick-picks (1, 2, 3, 5, 10) and a custom number input; uses the closeDialogV2 hook for reliable close detection
   - `apps/loot-prep-app.js`: rewritten from placeholder; Custom Resources section lists existing resources with icon, name, description, value/max display, edit and delete buttons; "Add Resource" button opens the create-or-edit dialog; auto-refresh hook listens for changes to the `customResources` flag
   - `apps/resource-edit-dialog.js`: dialog for creating or editing a resource with name, icon (with file picker via `foundry.applications.apps.FilePicker.implementation`), current value, max (blank = unbounded), and description; live icon preview as the path changes; validation prevents empty names; closeDialogV2 hook handles cancel paths reliably
   - `inventory-rendering.js`: `buildResources` updated to align with the new schema (was using old `imagePath` / `count` / `sortIndex` field names); display fields include `displayValue` (X or X/Y), `atMax` and `atZero` boolean flags for styling
-  - `templates/inventory.hbs`: resources section now shows +/− buttons in each row, uses `displayValue` for X / Y formatting, has hover tooltip with description
+  - `templates/inventory.hbs`: resources section now shows +/âˆ’ buttons in each row, uses `displayValue` for X / Y formatting, has hover tooltip with description
   - `templates/loot-prep.hbs`: rewritten with a Custom Resources section (header with Add button, list of rows with icon/name/desc/value/edit/delete) and a Hidden Items placeholder section for step 15
   - `styles/module.css`: added ~250 lines for resource rows (inventory popup), resource management UI (loot prep popup), and the resource edit dialog with icon picker control
   - Localization: existing `quartermaster.buttons.gmLootPrep` reused
@@ -273,8 +279,10 @@ Initial public release. Core feature set complete through build step 18.
 - Sidebar injection stubs (pending step 4 of Build Sequence)
 
 
-[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.0
+

@@ -316,6 +316,37 @@ async function handleEgressDrop(destActor, data) {
   await submitEgressRequest({ sourceItem, destActor });
 }
 
+/**
+ * Transfer a visible Shared Party Inventory item to an actor using the same
+ * egress pipeline as drag-and-drop.
+ *
+ * @param {string} itemId
+ * @param {Actor} destActor
+ * @returns {Promise<Object|null>}
+ */
+export async function transferInventoryItemToActor(itemId, destActor) {
+  const backingActor = getBackingActor();
+  if (!backingActor) {
+    ui.notifications.error(`${MODULE_TITLE}: backing actor not initialized.`);
+    return null;
+  }
+  if (!destActor) {
+    ui.notifications.warn(`${MODULE_TITLE}: no character selected.`);
+    return null;
+  }
+  if (destActor.id === backingActor.id) {
+    return null;
+  }
+
+  const sourceItem = backingActor.items.get(itemId);
+  if (!sourceItem) {
+    ui.notifications.warn(`${MODULE_TITLE}: source item no longer exists in the vault.`);
+    return null;
+  }
+
+  return await submitEgressRequest({ sourceItem, destActor });
+}
+
 async function handleLootPrepToSheetDrop(destActor, data) {
   if (!data.qmSourceItemUuid) {
     console.warn(`${MODULE_TITLE} | Loot prep drop missing source UUID`);
@@ -361,6 +392,7 @@ async function submitIngressRequest({ sourceItem, destActor }) {
   });
 
   notifyTransferResult(result, sourceItem.name, "ingress", destActor.name);
+  return result;
 }
 
 async function submitEgressRequest({ sourceItem, destActor }) {
@@ -376,6 +408,7 @@ async function submitEgressRequest({ sourceItem, destActor }) {
   });
 
   notifyTransferResult(result, sourceItem.name, "egress", destActor.name);
+  return result;
 }
 
 function buildTransferPayload(sourceItem, destActor) {
