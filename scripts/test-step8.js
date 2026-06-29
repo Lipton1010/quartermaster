@@ -201,14 +201,43 @@ async function runWeightCacheTests(t) {
       (50 * 2) + (0.01 * 10) + 50  // 150.1
     );
 
-    // Test 4: invalidation on item update
+    // Test 4: hidden/staged items do not count toward shared inventory weight
+    const [hiddenAnvil] = await actor.createEmbeddedDocuments("Item", [{
+      name: "Hidden Platinum Anvil",
+      type: "loot",
+      system: { quantity: 4, weight: { value: 200, units: "lb" } },
+      flags: { [MODULE_ID]: { [FLAGS.HIDDEN]: true } }
+    }]);
+    t.assertEq("Cache invalidated after hidden item create",
+      WeightCache.peek(actor.id), null
+    );
+    const withHidden = WeightCache.getRawTotals(actor);
+    t.assertEq("Hidden items are excluded from itemWeight",
+      withHidden.itemWeight,
+      (50 * 2) + (0.01 * 10) + 50
+    );
+
+    await hiddenAnvil.unsetFlag(MODULE_ID, FLAGS.HIDDEN);
+    t.assertEq("Cache invalidated after revealing hidden item",
+      WeightCache.peek(actor.id), null
+    );
+    const afterReveal = WeightCache.getRawTotals(actor);
+    t.assertEq("Revealed item is included in itemWeight",
+      afterReveal.itemWeight,
+      (50 * 2) + (0.01 * 10) + 50 + (200 * 4)
+    );
+
+    await actor.deleteEmbeddedDocuments("Item", [hiddenAnvil.id]);
+    WeightCache.getRawTotals(actor);
+
+    // Test 5: invalidation on item update
     const anItem = actor.items.find(i => i.name === "Heavy Anvil");
     await anItem.update({ "system.quantity": 3 });
     t.assertEq("Cache invalidated after updateItem",
       WeightCache.peek(actor.id), null
     );
 
-    // Test 5: invalidation on item delete
+    // Test 6: invalidation on item delete
     WeightCache.getRawTotals(actor);  // re-populate
     const toDelete = actor.items.find(i => i.name === "Light Feather");
     await actor.deleteEmbeddedDocuments("Item", [toDelete.id]);
@@ -216,21 +245,21 @@ async function runWeightCacheTests(t) {
       WeightCache.peek(actor.id), null
     );
 
-    // Test 6: invalidation on currency change
+    // Test 7: invalidation on currency change
     WeightCache.getRawTotals(actor);  // re-populate
     await actor.update({ "system.currency.gp": 200 });
     t.assertEq("Cache invalidated after currency update",
       WeightCache.peek(actor.id), null
     );
 
-    // Test 7: invalidation on non-currency actor update does NOT invalidate
+    // Test 8: invalidation on non-currency actor update does NOT invalidate
     WeightCache.getRawTotals(actor);  // re-populate
     await actor.update({ name: "Renamed Test Actor" });
     t.assert("Cache NOT invalidated on non-currency actor update",
       WeightCache.peek(actor.id) !== null
     );
 
-    // Test 8: recomputeTotals always recomputes
+    // Test 9: recomputeTotals always recomputes
     const beforeRecompute = WeightCache.getRawTotals(actor);
     const recomputed = WeightCache.recomputeTotals(actor);
     t.assert("recomputeTotals returns a new object",
@@ -241,7 +270,7 @@ async function runWeightCacheTests(t) {
       beforeRecompute  // values equal even if reference differs
     );
 
-    // Test 9: invalidateActor returns boolean
+    // Test 10: invalidateActor returns boolean
     t.assert("invalidateActor returns true when entry existed",
       WeightCache.invalidateActor(actor.id) === true
     );
@@ -249,7 +278,7 @@ async function runWeightCacheTests(t) {
       WeightCache.invalidateActor(actor.id) === false
     );
 
-    // Test 10: actor with no items has zero itemWeight
+    // Test 11: actor with no items has zero itemWeight
     const emptyActor = await createTestActor("QM_WeightCache_Empty");
     try {
       const emptyTotals = WeightCache.getRawTotals(emptyActor);

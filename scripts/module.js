@@ -114,6 +114,7 @@ import * as HiddenCurrency from "./hidden-currency.js";
 import * as LootPrepFolders from "./loot-prep-folders.js";
 import * as ContextMenu from "./context-menu.js";
 import { registerCompendiumContextMenu } from "./compendium-menu.js";
+import * as InventoryToken from "./inventory-token.js";
 
 /**
  * Foundry lifecycle: init
@@ -142,6 +143,7 @@ Hooks.once("ready", async () => {
   registerLogRefreshHooks();
   registerLootPrepRefreshHooks();
   registerCompendiumContextMenu();
+  InventoryToken.registerInventoryTokenShortcutHooks();
 
   // Expose a public API on the module for other scripts and the test harness
   const module = game.modules.get(MODULE_ID);
@@ -178,6 +180,7 @@ Hooks.once("ready", async () => {
       hiddenCurrency: HiddenCurrency,
       lootPrepFolders: LootPrepFolders,
       contextMenu: ContextMenu,
+      inventoryToken: InventoryToken,
       sanitization: Sanitization,
       weightCache: WeightCache,
       claimCommit: ClaimCommit,

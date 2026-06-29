@@ -19,7 +19,8 @@ export const FLAGS = {
   PER_ITEM_PERMISSION: "permission",
   HIDDEN_CURRENCY: "hiddenCurrency",
   LOOT_PREP_FOLDERS: "lootPrepFolders",
-  BACKING_ACTOR_MARKER: "isQuartermasterBackingActor"
+  BACKING_ACTOR_MARKER: "isQuartermasterBackingActor",
+  INVENTORY_TOKEN_SHORTCUT: "isInventoryTokenShortcut"
 };
 
 /**
@@ -40,6 +41,12 @@ export const SETTINGS = {
   RESEND_COOLDOWN_SECONDS: "resendCooldownSeconds",
   // Display
   UNIDENTIFIED_DISPLAY: "unidentifiedDisplay",
+  INVENTORY_BUTTON_LABEL: "inventoryButtonLabel",
+  INVENTORY_BACKGROUND_IMAGE: "inventoryBackgroundImage",
+  HIDE_PRICES_FROM_PLAYERS: "hidePricesFromPlayers",
+  ENABLE_INVENTORY_TOKEN: "enableInventoryToken",
+  INVENTORY_TOKEN_NAME: "inventoryTokenName",
+  INVENTORY_TOKEN_IMAGE: "inventoryTokenImage",
   DEFAULT_ENTRY_SIZE: "defaultEntrySize",
   SORT_ORDER: "sortOrder",
   HIDE_ZERO_BALANCES: "hideZeroBalances",

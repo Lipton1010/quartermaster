@@ -8,7 +8,7 @@
 
 import { MODULE_ID, MODULE_TITLE, FLAGS, SETTINGS, HOOKS } from "../constants.js";
 import { getBackingActor } from "../backing-actor.js";
-import { buildInventoryContext } from "../inventory-rendering.js";
+import { buildInventoryContext, getInventoryButtonLabel } from "../inventory-rendering.js";
 import { attachInventoryDragDrop } from "../drag-drop.js";
 import { attachCurrencyButtons } from "../currency-buttons.js";
 import { attachResourceButtons } from "../resource-buttons.js";
@@ -90,6 +90,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       classes: ["quartermaster-body"]
     }
   };
+
+  get title() {
+    return getInventoryButtonLabel();
+  }
 
   _getHeaderControls() {
     const controls = super._getHeaderControls?.() ?? [];

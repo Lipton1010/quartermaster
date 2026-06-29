@@ -15,11 +15,13 @@
  * passed to the hook) and earlier jQuery-wrapped versions.
  */
 
-import { MODULE_ID, MODULE_TITLE } from "./constants.js";
+import { MODULE_ID, MODULE_TITLE, SETTINGS } from "./constants.js";
 import { openInventoryApp } from "./apps/inventory-app.js";
 import { openLootPrepApp } from "./apps/loot-prep-app.js";
 import { openTransactionLogApp } from "./apps/transaction-log-app.js";
+import { getInventoryButtonLabel } from "./inventory-rendering.js";
 import { canUserAccessLog } from "./transaction-log-query.js";
+import { createInventoryTokenShortcut } from "./inventory-token.js";
 
 const CONTAINER_CLASS = "quartermaster-sidebar-actions";
 const BUTTON_CLASS = "quartermaster-sidebar-btn";
@@ -61,6 +63,7 @@ export function injectSidebarButtons(app, html) {
     cssClass: "qm-btn-inventory",
     icon: "fa-solid fa-box-archive",
     labelKey: "quartermaster.buttons.sharedPartyInventory",
+    label: getInventoryButtonLabel(),
     onClick: handleInventoryClick
   }));
 
@@ -72,6 +75,15 @@ export function injectSidebarButtons(app, html) {
       labelKey: "quartermaster.buttons.gmLootPrep",
       onClick: handleLootPrepClick
     }));
+
+    if (game.settings.get(MODULE_ID, SETTINGS.ENABLE_INVENTORY_TOKEN)) {
+      container.appendChild(buildButton({
+        cssClass: "qm-btn-token",
+        icon: "fa-solid fa-location-dot",
+        labelKey: "quartermaster.buttons.inventoryToken",
+        onClick: handleInventoryTokenClick
+      }));
+    }
   }
 
   // Transaction Log — visible based on transactionLogVisibility setting
@@ -90,7 +102,7 @@ export function injectSidebarButtons(app, html) {
   header.insertBefore(container, header.firstChild);
 }
 
-function buildButton({ cssClass, icon, labelKey, onClick }) {
+function buildButton({ cssClass, icon, labelKey, label, onClick }) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.classList.add(BUTTON_CLASS, cssClass);
@@ -102,7 +114,7 @@ function buildButton({ cssClass, icon, labelKey, onClick }) {
   btn.appendChild(iconEl);
 
   const labelEl = document.createElement("span");
-  labelEl.textContent = game.i18n.localize(labelKey);
+  labelEl.textContent = label ?? game.i18n.localize(labelKey);
   btn.appendChild(labelEl);
 
   btn.addEventListener("click", onClick);
@@ -131,6 +143,20 @@ function handleLootPrepClick(event) {
     console.error(`${MODULE_TITLE} | Failed to open loot prep app`, err);
     ui.notifications.error(
       `${MODULE_TITLE}: could not open GM Loot Prep. ` +
+      `Check the console for details.`
+    );
+  }
+}
+
+async function handleInventoryTokenClick(event) {
+  event?.preventDefault?.();
+  if (!game.user.isGM) return;
+  try {
+    await createInventoryTokenShortcut();
+  } catch (err) {
+    console.error(`${MODULE_TITLE} | Failed to place inventory token`, err);
+    ui.notifications.error(
+      `${MODULE_TITLE}: could not place the inventory token. ` +
       `Check the console for details.`
     );
   }

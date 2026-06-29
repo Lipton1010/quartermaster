@@ -40,6 +40,9 @@
         {{#if hasHiddenContent}}<span class="qm-hidden-count">{{allHiddenCount}}</span>{{/if}}
       </h3>
       <div class="qm-hidden-bulk-actions">
+        <button type="button" data-action="create-item" class="qm-prep-secondary" title="Create a hidden item">
+          <i class="fa-solid fa-plus"></i> Create Item
+        </button>
         <button type="button" data-action="add-currency-loot" class="qm-prep-secondary" title="Stage currency loot">
           <i class="fa-solid fa-coins"></i> Add Currency
         </button>
@@ -68,6 +71,7 @@
           <span class="qm-folder-name">{{this.name}}</span>
           <span class="qm-folder-count">({{this.totalEntries}})</span>
           <div class="qm-folder-actions">
+            <button type="button" data-action="create-item" data-folder-id="{{this.id}}" title="Create item in this folder" class="qm-folder-btn"><i class="fa-solid fa-plus"></i></button>
             <button type="button" data-action="add-currency-loot" data-folder-id="{{this.id}}" title="Add currency to this folder" class="qm-folder-btn"><i class="fa-solid fa-coins"></i></button>
             <button type="button" data-action="rename-folder" data-folder-id="{{this.id}}" title="Rename" class="qm-folder-btn"><i class="fa-solid fa-pen"></i></button>
             <button type="button" data-action="delete-folder" data-folder-id="{{this.id}}" title="Delete folder" class="qm-folder-btn qm-prep-danger"><i class="fa-solid fa-trash"></i></button>

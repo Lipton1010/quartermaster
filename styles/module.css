@@ -156,12 +156,37 @@
 }
 
 .quartermaster .quartermaster-inventory-root {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   gap: 8px;
   padding: 10px 12px;
   font-size: 0.95em;
+  overflow: hidden;
+}
+
+.quartermaster .quartermaster-inventory-root > *:not(.qm-inventory-watermark) {
+  position: relative;
+  z-index: 1;
+}
+
+.quartermaster .quartermaster-inventory-root .qm-inventory-watermark {
+  position: absolute;
+  inset: 16px;
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.18;
+}
+
+.quartermaster .quartermaster-inventory-root .qm-inventory-watermark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: saturate(0.9) brightness(1.15);
 }
 
 /* Header strip with capacity bar and total gp */
@@ -1547,12 +1572,14 @@ body.qm-dragging {
   z-index: 10000;
   min-width: 190px;
   padding: 4px 0;
-  background: var(--color-bg-option, #1a1a2e);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: #1f1d2f;
+  color: #f3eadc;
+  border: 1px solid rgba(220, 200, 170, 0.28);
   border-radius: 5px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.55);
   font-family: inherit;
   font-size: 0.85em;
+  text-shadow: none;
 }
 
 .qm-context-menu-list {
@@ -1567,27 +1594,29 @@ body.qm-dragging {
   gap: 8px;
   padding: 7px 14px;
   cursor: pointer;
-  color: inherit;
+  color: #f3eadc;
   white-space: nowrap;
-  transition: background 0.1s;
+  transition: background 0.1s, color 0.1s;
 }
 
 .qm-context-menu-item:hover {
-  background: rgba(255,255,255,0.08);
+  background: rgba(220, 200, 170, 0.16);
+  color: #ffffff;
 }
 
 .qm-context-menu-item i {
   width: 14px;
   text-align: center;
-  opacity: 0.75;
+  opacity: 0.9;
 }
 
 .qm-context-menu-danger {
-  color: #c05050 !important;
+  color: #ff6b6b !important;
 }
 
 .qm-context-menu-danger:hover {
-  background: rgba(192,80,80,0.12) !important;
+  background: rgba(255,107,107,0.18) !important;
+  color: #ff8a8a !important;
 }
 
 /* Inventory item row layout: add column for GM actions */

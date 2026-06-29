@@ -82,6 +82,7 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
       "reveal-selected":    LootPrepApp.onRevealSelected,
       "delete-selected":    LootPrepApp.onDeleteSelected,
       "reveal-all":         LootPrepApp.onRevealAll,
+      "create-item":        LootPrepApp.onCreateItem,
       // Currency loot
       "add-currency-loot":     LootPrepApp.onAddCurrencyLoot,
       "reveal-currency":       LootPrepApp.onRevealCurrency,
@@ -241,6 +242,21 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
   // ================================================================
   // Hidden Items
   // ================================================================
+
+  static async onCreateItem(event, target) {
+    if (!game.user.isGM) return;
+
+    const folderId = target.dataset.folderId ?? null;
+    const created = await _promptHiddenItemCreate(folderId);
+    if (!created) return;
+
+    this.render();
+    try {
+      created.sheet?.render?.(true);
+    } catch (err) {
+      console.warn(`${MODULE_TITLE} | Created hidden item, but could not open its sheet`, err);
+    }
+  }
 
   static async onRevealItem(event, target) {
     if (!game.user.isGM) return;
@@ -482,6 +498,133 @@ async function _promptCurrencyLoot(folderId) {
 
     dialog.render({ force: true });
   });
+}
+
+async function _promptHiddenItemCreate(folderId) {
+  const actor = getBackingActor();
+  if (!actor) {
+    ui.notifications.error(`${MODULE_TITLE}: no backing actor.`);
+    return null;
+  }
+
+  const itemTypes = game.documentTypes.Item.filter(t => !["base"].includes(t));
+  if (itemTypes.length === 0) {
+    ui.notifications.error(`${MODULE_TITLE}: no item types are available.`);
+    return null;
+  }
+
+  const defaultType = itemTypes.includes("loot") ? "loot" : itemTypes[0];
+  const options = itemTypes.map(type => {
+    const label = game.i18n.localize(CONFIG.Item.typeLabels?.[type] ?? type);
+    return `<option value="${escapeHtml(type)}"${type === defaultType ? " selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("");
+
+  const content = `
+    <form class="qm-pref-form" autocomplete="off">
+      <div class="qm-pref-row">
+        <label>Item Name</label>
+        <input type="text" name="itemName" value="New Loot" style="flex:1;" />
+      </div>
+      <div class="qm-pref-row">
+        <label>Item Type</label>
+        <select name="itemType" class="qm-pref-select">
+          ${options}
+        </select>
+      </div>
+      <p class="hint">Creates a hidden Loot Prep item. It will stay hidden from players until revealed.</p>
+    </form>
+  `;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    let closeHookId = null;
+    let formValues = null;
+
+    const finish = async (saved) => {
+      if (resolved) return;
+      resolved = true;
+      if (closeHookId !== null) {
+        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
+      }
+
+      if (!saved || !formValues) {
+        resolve(null);
+        return;
+      }
+
+      try {
+        const created = await _createHiddenItem(formValues, folderId);
+        resolve(created);
+      } catch (err) {
+        console.error(`${MODULE_TITLE} | Failed to create hidden Loot Prep item`, err);
+        ui.notifications.error(`${MODULE_TITLE}: could not create hidden item.`);
+        resolve(null);
+      }
+    };
+
+    const dialog = new DialogV2({
+      window: { title: "Create Loot Prep Item", icon: "fa-solid fa-plus" },
+      content,
+      rejectClose: false,
+      buttons: [
+        {
+          action: "save", label: "Create", icon: "fa-solid fa-plus", default: true,
+          callback: (event, btn, dlg) => {
+            const root = dlg.element ?? dlg;
+            const name = root.querySelector("[name='itemName']")?.value?.trim();
+            const type = root.querySelector("[name='itemType']")?.value ?? defaultType;
+            if (name && itemTypes.includes(type)) {
+              formValues = { name, type };
+            }
+          }
+        },
+        { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
+          callback: () => { formValues = null; }
+        }
+      ]
+    });
+
+    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
+      if (closedApp !== dialog) return;
+      finish(formValues !== null);
+    });
+
+    dialog.render({ force: true });
+  });
+}
+
+async function _createHiddenItem(formValues, folderId) {
+  const actor = getBackingActor();
+  if (!actor) return null;
+
+  const quartermasterFlags = {
+    [FLAGS.HIDDEN]: true
+  };
+  if (folderId) quartermasterFlags.lootPrepFolder = folderId;
+
+  const itemData = {
+    name: formValues.name,
+    type: formValues.type,
+    img: CONFIG.Item.typeIcons?.[formValues.type] ?? Item.DEFAULT_ICON ?? "icons/svg/item-bag.svg",
+    flags: {
+      [MODULE_ID]: quartermasterFlags
+    }
+  };
+
+  const [created] = await actor.createEmbeddedDocuments("Item", [itemData]);
+  if (!created) return null;
+
+  await writeEntry({
+    type: "hidden.staged",
+    requestId: `qm-hidden-staged-${created.id}-${Date.now()}`,
+    userId: game.user.id,
+    itemId: created.id,
+    itemName: created.name ?? "(unknown)",
+    backingActorId: actor.id
+  });
+
+  ui.notifications.info(`"${created.name}" created in GM Loot Prep.`);
+  return created;
 }
 
 async function _promptFolderName(title, currentName) {

@@ -61,7 +61,7 @@ export function buildInventoryContext(actor) {
   const resources = buildResources(actor);
   const items = buildItems(actor, settings);
 
-  // Pull raw aggregate totals from the cache (computed once and reused
+  // Pull raw visible inventory totals from the cache (computed once and reused
   // until item or currency changes invalidate it via weight-cache hooks).
   const raw = getRawTotals(actor) ?? { itemWeight: 0, coinSum: 0, coinValues: {} };
 
@@ -87,6 +87,9 @@ export function buildInventoryContext(actor) {
     backingActorName: actor.name,
     backingActorId: actor.id,
     isGM: game.user.isGM,
+    inventoryLabel: settings.inventoryButtonLabel,
+    hasBackgroundImage: Boolean(settings.inventoryBackgroundImage),
+    backgroundImageSrc: settings.inventoryBackgroundImage,
     currencies,
     hasCurrencies: currencies.length > 0,
     resources,
@@ -122,8 +125,16 @@ function readSettings() {
     hideElectrum: game.settings.get(MODULE_ID, SETTINGS.HIDE_ELECTRUM),
     sortOrder: game.settings.get(MODULE_ID, SETTINGS.SORT_ORDER),
     entrySize: game.settings.get(MODULE_ID, SETTINGS.DEFAULT_ENTRY_SIZE),
-    unidentifiedDisplay: game.settings.get(MODULE_ID, SETTINGS.UNIDENTIFIED_DISPLAY)
+    unidentifiedDisplay: game.settings.get(MODULE_ID, SETTINGS.UNIDENTIFIED_DISPLAY),
+    inventoryButtonLabel: getInventoryButtonLabel(),
+    inventoryBackgroundImage: String(game.settings.get(MODULE_ID, SETTINGS.INVENTORY_BACKGROUND_IMAGE) ?? "").trim(),
+    showItemPrices: game.user.isGM || !game.settings.get(MODULE_ID, SETTINGS.HIDE_PRICES_FROM_PLAYERS)
   };
+}
+
+export function getInventoryButtonLabel() {
+  const configured = game.settings.get(MODULE_ID, SETTINGS.INVENTORY_BUTTON_LABEL);
+  return configured?.trim() || game.i18n.localize("quartermaster.buttons.sharedPartyInventory");
 }
 
 function buildCurrencies(actor, settings) {
@@ -203,8 +214,8 @@ function prepareItemDisplay(item, settings) {
     type: item.type ?? "other",
     rawName: item.name,
     qmSortIndex: item.getFlag?.(MODULE_ID, "sortIndex") ?? null,
-    priceDisplay,
-    hasPrice: !!priceDisplay
+    priceDisplay: settings.showItemPrices ? priceDisplay : null,
+    hasPrice: settings.showItemPrices && !!priceDisplay
   };
 }
 

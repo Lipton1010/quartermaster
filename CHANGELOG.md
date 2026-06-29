@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.5] - 2026-06-29
+
+### Added
+- Add GM settings to customize the Shared Party Inventory button/window name and optional popup watermark image.
+- Add a GM setting to hide item prices from player Shared Party Inventory views while keeping prices visible to GMs.
+- Add an optional GM-only scene token shortcut for the Shared Party Inventory.
+- Double-clicking a Quartermaster inventory shortcut token opens the configured inventory window.
+- Add a Create Item button to GM Loot Prep for quickly staging hidden loot.
+
+### Changed
+- Update verified Foundry VTT compatibility metadata to v14.364.
+
+### Fixed
+- Improve Shared Party Inventory right-click menu contrast on dark themes.
+- Exclude hidden GM Loot Prep items from Shared Party Inventory capacity and item-weight totals.
+- Filter duplicate temporary wildshape/wildform actors out of the GM Add to Character picker.
+- Display the configured inventory background image through a dedicated watermark layer.
+- Remove hard-coded Shared Party Inventory wording from configurable inventory setting hints.
+
+
 ## [0.1.4] - 2026-06-07
 
 ### Added

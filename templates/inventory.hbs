@@ -17,7 +17,13 @@
     <p>Backing actor not initialized. Reload the world.</p>
   </div>
 {{else}}
-<div class="quartermaster-inventory-root {{entrySizeClass}}">
+<div class="quartermaster-inventory-root {{entrySizeClass}}{{#if hasBackgroundImage}} qm-has-background{{/if}}">
+
+  {{#if hasBackgroundImage}}
+  <div class="qm-inventory-watermark" aria-hidden="true">
+    <img src="{{backgroundImageSrc}}" alt="" />
+  </div>
+  {{/if}}
 
   {{!-- Header: capacity and total gp --}}
   <header class="qm-inv-header">

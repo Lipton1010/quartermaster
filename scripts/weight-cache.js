@@ -7,7 +7,7 @@
  * are computed by callers at read time using these raw inputs.
  *
  * Cached per actor:
- *   - itemWeight:    sum of (item.weight × item.quantity) across all items
+ *   - itemWeight:    sum of (item.weight × item.quantity) across visible items
  *   - coinSum:       sum of all 5 currency values
  *   - coinValues:    { pp, gp, ep, sp, cp } snapshot
  *
@@ -30,7 +30,9 @@
  * recomputation cost is bounded by item count, which is small.
  */
 
-const _cache = new Map(); // actorId → { itemWeight, coinSum, coinValues }
+import { MODULE_ID, FLAGS } from "./constants.js";
+
+const _cache = new Map(); // actorId -> { itemWeight, coinSum, coinValues }
 
 // ============================================================
 // Public read API
@@ -163,6 +165,7 @@ function computeItemWeight(actor) {
   if (!actor?.items) return 0;
   let total = 0;
   for (const item of actor.items) {
+    if (item.getFlag?.(MODULE_ID, FLAGS.HIDDEN) === true) continue;
     const w = extractItemWeight(item);
     const qty = item.system?.quantity ?? 1;
     total += w * qty;

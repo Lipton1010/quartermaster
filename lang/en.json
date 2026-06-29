@@ -4,13 +4,14 @@
     "buttons": {
       "sharedPartyInventory": "Shared Party Inventory",
       "gmLootPrep": "GM Loot Prep",
+      "inventoryToken": "Place Inventory Token",
       "log": "Transaction Log",
       "preferences": "Preferences"
     },
     "settings": {
       "enforceCapacity": {
         "name": "Enforce Capacity Limit",
-        "hint": "When enabled, the Shared Party Inventory respects a weight limit. Default 500 lbs matches a Bag of Holding. Disable for unlimited capacity."
+        "hint": "When enabled, the inventory respects a weight limit. Default 500 lbs matches a Bag of Holding. Disable for unlimited capacity."
       },
       "capacityLimit": {
         "name": "Capacity Limit (lbs)",
@@ -51,6 +52,30 @@
       "unidentifiedDisplay": {
         "name": "Unidentified Item Display",
         "hint": "How items marked unidentified appear in the inventory."
+      },
+      "inventoryButtonLabel": {
+        "name": "Inventory Button Name",
+        "hint": "Custom name shown for the inventory button and popup window. Leave blank to use the default."
+      },
+      "inventoryBackgroundImage": {
+        "name": "Inventory Background Image",
+        "hint": "Optional image shown as a subtle watermark inside the inventory popup."
+      },
+      "hidePricesFromPlayers": {
+        "name": "Hide Item Prices from Players",
+        "hint": "When enabled, item prices are hidden from players in the inventory. GMs still see prices."
+      },
+      "enableInventoryToken": {
+        "name": "Enable Inventory Token Shortcut",
+        "hint": "When enabled, GMs can place a scene token that opens the inventory when double-clicked."
+      },
+      "inventoryTokenName": {
+        "name": "Inventory Token Name",
+        "hint": "Optional name for newly placed inventory shortcut tokens. Leave blank to use the inventory button name."
+      },
+      "inventoryTokenImage": {
+        "name": "Inventory Token Image",
+        "hint": "Optional image for newly placed inventory shortcut tokens. Leave blank to use the Quartermaster Vault image."
       },
       "defaultEntrySize": {
         "name": "Default Entry Size",

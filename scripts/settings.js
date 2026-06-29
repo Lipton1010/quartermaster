@@ -4,7 +4,7 @@
  * Registers all world-scope and client-scope settings. Called once during `init`.
  */
 
-import { MODULE_ID, MODULE_TITLE, SETTINGS, CHOICES } from "./constants.js";
+import { MODULE_ID, MODULE_TITLE, SETTINGS, CHOICES, HOOKS } from "./constants.js";
 
 export function registerSettings() {
   // ============================================================
@@ -134,6 +134,75 @@ export function registerSettings() {
       [CHOICES.UNIDENTIFIED_DISPLAY.IDENTIFIED]: "quartermaster.choices.unidentifiedDisplay.identified",
       [CHOICES.UNIDENTIFIED_DISPLAY.PER_ITEM]: "quartermaster.choices.unidentifiedDisplay.perItem"
     }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.INVENTORY_BUTTON_LABEL, {
+    name: "quartermaster.settings.inventoryButtonLabel.name",
+    hint: "quartermaster.settings.inventoryButtonLabel.hint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "Shared Party Inventory",
+    onChange: () => {
+      ui.actors?.render?.();
+      Hooks.callAll(HOOKS.PREFERENCES_CHANGED, { keys: [SETTINGS.INVENTORY_BUTTON_LABEL] });
+    }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.INVENTORY_BACKGROUND_IMAGE, {
+    name: "quartermaster.settings.inventoryBackgroundImage.name",
+    hint: "quartermaster.settings.inventoryBackgroundImage.hint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+    filePicker: "image",
+    onChange: () => {
+      Hooks.callAll(HOOKS.PREFERENCES_CHANGED, { keys: [SETTINGS.INVENTORY_BACKGROUND_IMAGE] });
+    }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.HIDE_PRICES_FROM_PLAYERS, {
+    name: "quartermaster.settings.hidePricesFromPlayers.name",
+    hint: "quartermaster.settings.hidePricesFromPlayers.hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => {
+      Hooks.callAll(HOOKS.PREFERENCES_CHANGED, { keys: [SETTINGS.HIDE_PRICES_FROM_PLAYERS] });
+    }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.ENABLE_INVENTORY_TOKEN, {
+    name: "quartermaster.settings.enableInventoryToken.name",
+    hint: "quartermaster.settings.enableInventoryToken.hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => {
+      ui.actors?.render?.();
+    }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.INVENTORY_TOKEN_NAME, {
+    name: "quartermaster.settings.inventoryTokenName.name",
+    hint: "quartermaster.settings.inventoryTokenName.hint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.INVENTORY_TOKEN_IMAGE, {
+    name: "quartermaster.settings.inventoryTokenImage.name",
+    hint: "quartermaster.settings.inventoryTokenImage.hint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+    filePicker: "image"
   });
 
   game.settings.register(MODULE_ID, SETTINGS.DEFAULT_ENTRY_SIZE, {
