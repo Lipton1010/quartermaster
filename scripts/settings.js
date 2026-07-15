@@ -308,7 +308,9 @@ export function registerSettings() {
     name: "quartermaster.settings.hideElectrum.name",
     hint: "quartermaster.settings.hideElectrum.hint",
     scope: "client",
-    config: true,
+    // Legacy setting retained only to seed the new world-level currency
+    // visibility configuration on first use.
+    config: false,
     type: Boolean,
     default: false
   });

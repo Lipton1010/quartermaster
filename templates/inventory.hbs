@@ -53,21 +53,25 @@
   {{#if hasCurrencies}}
   <section class="qm-inv-section qm-currency-rail">
     {{#each currencies}}
-      <div class="qm-currency-tile qm-currency-{{this.type}}" data-currency="{{this.type}}">
+      <div class="qm-currency-tile qm-currency-{{this.type}}{{#if this.isCustom}} qm-currency-custom{{/if}}"
+           data-currency-id="{{this.id}}" title="{{this.name}}">
+        {{#if this.hasImage}}
+          <img class="qm-currency-tile-image" src="{{this.image}}" alt="" aria-hidden="true" />
+        {{/if}}
         <span class="qm-currency-label">{{this.symbol}}</span>
         <span class="qm-currency-value">{{this.value}}</span>
         <div class="qm-currency-buttons">
           <button type="button"
                   class="qm-currency-btn qm-currency-remove"
                   data-action="currency-remove"
-                  data-currency="{{this.type}}"
+                  data-currency-id="{{this.id}}"
                   title="Remove {{this.symbol}} (shift-click to remove 1)">
             <i class="fa-solid fa-minus"></i>
           </button>
           <button type="button"
                   class="qm-currency-btn qm-currency-add"
                   data-action="currency-add"
-                  data-currency="{{this.type}}"
+                  data-currency-id="{{this.id}}"
                   title="Add {{this.symbol}} (shift-click to add 1)">
             <i class="fa-solid fa-plus"></i>
           </button>
@@ -125,6 +129,9 @@
         <option value="custom" {{#if sortedCustom}}selected{{/if}}>Manual</option>
       </select>
       {{#if isGM}}
+      <button type="button" data-action="manage-currencies" class="qm-section-action-btn" title="Create, edit, hide, or restore currencies">
+        <i class="fa-solid fa-coins"></i> Manage Currencies
+      </button>
       <button type="button" data-action="create-item" class="qm-section-action-btn" title="Create a new item in the vault">
         <i class="fa-solid fa-plus"></i> Create Item
       </button>

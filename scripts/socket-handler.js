@@ -26,6 +26,7 @@ import { MODULE_ID, MODULE_TITLE } from "./constants.js";
 import { executeOperation } from "./operation-coordinator.js";
 import { needsApproval } from "./approval-policy.js";
 import { promptCurrencyApproval } from "./approval-dialog.js";
+import { getCurrency, applyCurrencyDelta } from "./currencies.js";
 
 const QUERY_NAME = "quartermaster.processRequest";
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -280,7 +281,8 @@ async function dispatchCurrencyChange(envelope, senderUserId) {
     return { status: "failed", error: "invalid-delta" };
   }
 
-  const resourceKeys = [`currency:${payload.currencyType}`];
+  // Custom balances share one flag object, so serialize all currency writes.
+  const resourceKeys = ["currency-ledger"];
 
   return await executeOperation({
     resourceKeys,
@@ -411,8 +413,6 @@ async function stubCurrencyChange(data, context) {
   return await realCurrencyChange(data, context);
 }
 
-const VALID_CURRENCY_TYPES = ["pp", "gp", "ep", "sp", "cp"];
-
 /**
  * Real currency change implementation (step 10). Validates the request,
  * checks for negative-balance, writes claim/commit transaction log
@@ -438,7 +438,8 @@ export async function realCurrencyChange(data, context) {
     return { status: "failed", error: "no-backing-actor" };
   }
 
-  if (!VALID_CURRENCY_TYPES.includes(currencyType)) {
+  const currency = getCurrency(currencyType, backingActor);
+  if (!currency) {
     return { status: "failed", error: "invalid-currency-type", currencyType };
   }
 
@@ -446,7 +447,7 @@ export async function realCurrencyChange(data, context) {
     return { status: "failed", error: "invalid-delta", delta };
   }
 
-  const currentValue = backingActor.system?.currency?.[currencyType] ?? 0;
+  const currentValue = currency.value ?? 0;
 
   // Zero delta is a no-op success (idempotency safety: same outcome regardless)
   if (delta === 0) {
@@ -454,6 +455,8 @@ export async function realCurrencyChange(data, context) {
       status: "success",
       resultData: {
         currencyType,
+        currencyName: currency.name,
+        currencySymbol: currency.symbol,
         delta: 0,
         previousValue: currentValue,
         newValue: currentValue,
@@ -465,11 +468,14 @@ export async function realCurrencyChange(data, context) {
 
   // Approval gate (step 13). Runs on the GM-side, before any mutation.
   // GMs auto-approve their own requests; players hit the configured policy.
-  if (needsApproval({ userId, delta })) {
+  const gpValue = currency.gpRate == null ? 0 : Math.abs(delta * currency.gpRate);
+  if (needsApproval({ userId, delta, gpValue })) {
     const decision = await promptCurrencyApproval({
       requestId,
       userId,
       currencyType,
+      currencyName: currency.name,
+      currencySymbol: currency.symbol,
       delta,
       currentBalance: currentValue,
       reason
@@ -484,6 +490,8 @@ export async function realCurrencyChange(data, context) {
         userId,
         timestamp: Date.now(),
         currencyType,
+        currencyName: currency.name,
+        currencySymbol: currency.symbol,
         delta,
         reason: reason ?? "",
         previousValue: currentValue,
@@ -524,6 +532,8 @@ export async function realCurrencyChange(data, context) {
     timestamp: Date.now(),
     type: "currency.claim",
     currencyType,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
     delta,
     reason: reason ?? "",
     previousValue: currentValue
@@ -531,9 +541,11 @@ export async function realCurrencyChange(data, context) {
 
   // Phase 2: Commit — apply the update, then log the outcome
   try {
-    await backingActor.update({
-      [`system.currency.${currencyType}`]: newValue
-    });
+    const applied = await applyCurrencyDelta(currencyType, delta, backingActor);
+    if (applied.status !== "success") {
+      throw new Error(applied.error ?? "currency-update-failed");
+    }
+    const committedValue = applied.newValue;
 
     await TransactionLog.writeEntry({
       requestId,
@@ -541,18 +553,22 @@ export async function realCurrencyChange(data, context) {
       timestamp: Date.now(),
       type: "currency.commit",
       currencyType,
+      currencyName: currency.name,
+      currencySymbol: currency.symbol,
       delta,
       previousValue: currentValue,
-      newValue
+      newValue: committedValue
     });
 
     return {
       status: "success",
       resultData: {
         currencyType,
+        currencyName: currency.name,
+        currencySymbol: currency.symbol,
         delta,
         previousValue: currentValue,
-        newValue,
+        newValue: committedValue,
         reason: reason ?? null
       }
     };
@@ -563,6 +579,8 @@ export async function realCurrencyChange(data, context) {
       timestamp: Date.now(),
       type: "currency.failed",
       currencyType,
+      currencyName: currency.name,
+      currencySymbol: currency.symbol,
       delta,
       error: err?.message ?? String(err)
     });

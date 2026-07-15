@@ -14,8 +14,7 @@
 import { MODULE_ID, MODULE_TITLE, FLAGS } from "./constants.js";
 import { getBackingActor } from "./backing-actor.js";
 import { writeEntry } from "./transaction-log.js";
-
-const CURRENCY_SYMBOLS = { pp: "PP", gp: "GP", ep: "EP", sp: "SP", cp: "CP" };
+import { getCurrency, applyCurrencyDelta, roundCurrency } from "./currencies.js";
 
 // ============================================================
 // Read
@@ -34,8 +33,8 @@ export function getHiddenCurrency(actor) {
 
 /**
  * Add a currency entry to the staging pool.
- * @param {string} type   pp|gp|ep|sp|cp
- * @param {number} amount positive integer
+ * @param {string} type   standard or custom currency ID
+ * @param {number} amount positive amount; decimals are supported
  * @param {string} [folderId] optional folder assignment
  * @returns {Promise<{status: string, entry?: Object}>}
  */
@@ -44,13 +43,17 @@ export async function addHiddenCurrency(type, amount, folderId = null) {
   const actor = getBackingActor();
   if (!actor) return { status: "failed", error: "no-backing-actor" };
 
-  const amt = parseInt(amount, 10);
+  const amt = roundCurrency(Number(amount));
   if (!Number.isFinite(amt) || amt <= 0) return { status: "failed", error: "invalid-amount" };
-  if (!CURRENCY_SYMBOLS[type]) return { status: "failed", error: "invalid-type" };
+  const currency = getCurrency(type, actor);
+  if (!currency) return { status: "failed", error: "invalid-type" };
 
   const entry = {
     id: `qm-hc-${foundry.utils.randomID()}`,
     type,
+    currencyId: type,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
     amount: amt,
     folderId: folderId || null,
     createdAt: Date.now()
@@ -60,7 +63,7 @@ export async function addHiddenCurrency(type, amount, folderId = null) {
   const updated = [...existing, entry];
   await actor.setFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY, updated);
 
-  console.debug(`${MODULE_TITLE} | addHiddenCurrency: ${amt} ${type.toUpperCase()}`);
+  console.debug(`${MODULE_TITLE} | addHiddenCurrency: ${amt} ${currency.symbol}`);
   return { status: "success", entry };
 }
 
@@ -79,7 +82,7 @@ export async function deleteHiddenCurrency(entryId) {
   const updated = existing.filter(e => e.id !== entryId);
   await actor.setFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY, updated);
 
-  console.debug(`${MODULE_TITLE} | deleteHiddenCurrency: removed ${entry.amount} ${entry.type.toUpperCase()}`);
+  console.debug(`${MODULE_TITLE} | deleteHiddenCurrency: removed ${entry.amount} ${entry.currencySymbol ?? entry.type.toUpperCase()}`);
   return { status: "success", entry };
 }
 
@@ -96,10 +99,13 @@ export async function revealHiddenCurrency(entryId) {
   const entry = existing.find(e => e.id === entryId);
   if (!entry) return { status: "failed", error: "not-found" };
 
-  // Merge into vault currency
-  const currentVal = actor.system?.currency?.[entry.type] ?? 0;
-  const newVal = currentVal + entry.amount;
-  await actor.update({ [`system.currency.${entry.type}`]: newVal });
+  const currencyId = entry.currencyId ?? entry.type;
+  const currency = getCurrency(currencyId, actor);
+  if (!currency) return { status: "failed", error: "currency-not-found" };
+  const currentVal = currency.value ?? 0;
+  const applied = await applyCurrencyDelta(currencyId, entry.amount, actor);
+  if (applied.status !== "success") return applied;
+  const newVal = applied.newValue;
 
   // Remove from hidden pool
   const updated = existing.filter(e => e.id !== entryId);
@@ -110,14 +116,17 @@ export async function revealHiddenCurrency(entryId) {
     type: "currency.revealed",
     requestId: `qm-hc-reveal-${entryId}-${Date.now()}`,
     userId: game.user.id,
-    currencyType: entry.type,
+    currencyType: currencyId,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
+    delta: entry.amount,
     amount: entry.amount,
     previousValue: currentVal,
     newValue: newVal,
     backingActorId: actor.id
   });
 
-  const label = `${entry.amount} ${CURRENCY_SYMBOLS[entry.type]}`;
+  const label = `${entry.amount} ${currency.symbol}`;
   ui.notifications.info(`${label} added to vault.`);
   console.debug(`${MODULE_TITLE} | revealHiddenCurrency: ${label}`);
   return { status: "success", entry, newValue: newVal };
@@ -137,27 +146,34 @@ export async function revealAllHiddenCurrency() {
   // Aggregate by type
   const totals = {};
   for (const e of entries) {
-    totals[e.type] = (totals[e.type] ?? 0) + e.amount;
+    const currencyId = e.currencyId ?? e.type;
+    totals[currencyId] = roundCurrency((totals[currencyId] ?? 0) + e.amount);
   }
 
-  // Build the currency update
-  const currencyUpdate = {};
+  const revealed = [];
   for (const [type, add] of Object.entries(totals)) {
-    const current = actor.system?.currency?.[type] ?? 0;
-    currencyUpdate[`system.currency.${type}`] = current + add;
+    const currency = getCurrency(type, actor);
+    if (!currency) return { status: "failed", error: "currency-not-found", currencyType: type };
+    const applied = await applyCurrencyDelta(type, add, actor);
+    if (applied.status !== "success") return applied;
+    revealed.push({ type, add, currency, previousValue: applied.previousValue, newValue: applied.newValue });
   }
 
-  await actor.update(currencyUpdate);
   await actor.setFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY, []);
 
   // Log
-  for (const [type, add] of Object.entries(totals)) {
+  for (const result of revealed) {
     await writeEntry({
       type: "currency.revealed",
-      requestId: `qm-hc-reveal-all-${type}-${Date.now()}`,
+      requestId: `qm-hc-reveal-all-${result.type}-${Date.now()}`,
       userId: game.user.id,
-      currencyType: type,
-      amount: add,
+      currencyType: result.type,
+      currencyName: result.currency.name,
+      currencySymbol: result.currency.symbol,
+      delta: result.add,
+      amount: result.add,
+      previousValue: result.previousValue,
+      newValue: result.newValue,
       backingActorId: actor.id
     });
   }

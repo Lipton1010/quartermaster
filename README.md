@@ -20,10 +20,11 @@ A simple way to think about it:
 
 - Shared party inventory accessible from a sidebar button or optional scene token shortcut
 - Drag-and-drop item sharing between character sheets, the party stash, and compendiums
-- Multi-currency tracking (PP, GP, EP, SP, CP) with optional GM approval workflow
+- Multi-currency tracking with PP, GP, EP, SP, CP, and unlimited GM-defined custom currencies
+- Per-currency visibility, optional tile images, decimal balances, and optional value conversion
 - Configurable approval modes: free, threshold-based, or all-required — with timeout and audit trail
 - GM Loot Prep tab with folder organization by encounter or location
-- Currency loot staging — prep GP/SP/CP payouts in Loot Prep, reveal to merge into the vault
+- Currency loot staging for built-in and custom currencies, revealed directly into the shared balance
 - One-click or bulk loot reveal; Shift+click reveal posts a chat announcement
 - Drag items from Loot Prep directly to character sheets to distribute loot
 - Custom counter resources (ammunition, charges, consumables) with CRUD UI
@@ -34,7 +35,7 @@ A simple way to think about it:
 - Full transaction log with filtering, search, grouping by operation, and rollback reference
 - Capacity tracking (Bag of Holding 500 lb default, or unlimited)
 - Optional currency weight tracking
-- Per-user preferences (sort order, entry size, hide zero balances, hide Electrum)
+- Per-user preferences (sort order, entry size, and hide zero balances)
 
 ## Requirements
 
@@ -51,7 +52,7 @@ Quartermaster is available directly through the Foundry VTT package browser.
 
 ### Manual Installation
 If you need to install a specific build or are testing a pre-release version, paste this manifest URL into Foundry's "Install Module" dialog:
-`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.5/module.json`
+`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.6/module.json`
 
 ## Compatibility
 
@@ -61,7 +62,7 @@ If you need to install a specific build or are testing a pre-release version, pa
 
 ## Status
 
-**v0.1.5 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, multi-currency tracking with optional GM approval flow, custom resources, GM Loot Prep (with folders, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
+**v0.1.6 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with optional GM approval flow, custom resources, GM Loot Prep (with folders, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
 
 ## License
 

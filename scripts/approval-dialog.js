@@ -45,14 +45,17 @@ export async function promptCurrencyApproval(request) {
   const {
     userId,
     currencyType,
+    currencyName,
+    currencySymbol,
     delta,
     currentBalance,
     reason
   } = request;
 
   const userName = game.users?.get?.(userId)?.name ?? "(unknown user)";
-  const symbol = currencyType.toUpperCase();
-  const fullName = CURRENCY_NAMES[currencyType] ?? symbol;
+  const symbol = currencySymbol || currencyType.toUpperCase();
+  const safeSymbol = escapeHtml(symbol);
+  const fullName = currencyName || CURRENCY_NAMES[currencyType] || symbol;
   const verb = delta > 0 ? "add" : "remove";
   const preposition = delta > 0 ? "to" : "from";
   const abs = Math.abs(delta);
@@ -68,7 +71,7 @@ export async function promptCurrencyApproval(request) {
   const warningHtml = insufficient
     ? `<p class="qm-approval-warning">
          <i class="fa-solid fa-triangle-exclamation"></i>
-         This would leave the vault with <strong>${newBalance} ${symbol}</strong>
+         This would leave the vault with <strong>${newBalance} ${safeSymbol}</strong>
          (insufficient funds; the request will fail even if approved).
        </p>`
     : "";
@@ -84,20 +87,20 @@ export async function promptCurrencyApproval(request) {
     <div class="qm-approval-request">
       <p class="qm-approval-lead">
         <strong>${escapeHtml(userName)}</strong> wants to
-        <strong>${verb} ${abs} ${symbol}</strong>
+        <strong>${verb} ${abs} ${safeSymbol}</strong>
         ${preposition} the party vault.
       </p>
       <div class="qm-approval-balance">
         <div>
           <span class="qm-approval-balance-label">Current:</span>
-          <strong>${currentBalance} ${symbol}</strong>
+          <strong>${currentBalance} ${safeSymbol}</strong>
         </div>
         <div class="qm-approval-arrow">
           <i class="fa-solid fa-arrow-right"></i>
         </div>
         <div>
           <span class="qm-approval-balance-label">After:</span>
-          <strong>${newBalance} ${symbol}</strong>
+          <strong>${newBalance} ${safeSymbol}</strong>
         </div>
       </div>
       ${reasonHtml}

@@ -14,6 +14,7 @@ import { attachCurrencyButtons } from "../currency-buttons.js";
 import { attachResourceButtons } from "../resource-buttons.js";
 import { attachInventoryContextMenu, handleInventoryGMAction } from "../context-menu.js";
 import { promptInventoryPreferences } from "./preferences-dialog.js";
+import { openCurrencyManager } from "./currency-manager-app.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -80,6 +81,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       "create-item":      InventoryApp.onCreateItem,
       "move-item-up":     InventoryApp.onMoveItemUp,
       "move-item-down":   InventoryApp.onMoveItemDown,
+      "manage-currencies": InventoryApp.onManageCurrencies,
       "open-preferences": InventoryApp.onOpenPreferences
     }
   };
@@ -97,6 +99,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _getHeaderControls() {
     const controls = super._getHeaderControls?.() ?? [];
+    if (game.user.isGM) {
+      controls.push({
+        icon: "fa-solid fa-coins",
+        label: "Manage Currencies",
+        action: "manage-currencies"
+      });
+    }
     controls.push({
       icon: "fa-solid fa-gear",
       label: "Preferences",
@@ -251,6 +260,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static async onOpenPreferences(event, target) {
     const saved = await promptInventoryPreferences();
     if (saved) this.render();
+  }
+
+  static async onManageCurrencies() {
+    if (!game.user.isGM) return;
+    await openCurrencyManager();
   }
 }
 

@@ -87,7 +87,7 @@
       },
       "hideZeroBalances": {
         "name": "Hide Currencies at Zero",
-        "hint": "When enabled, standard currencies with a balance of zero are hidden until they have value."
+        "hint": "When enabled, currencies with a balance of zero are hidden until they have value."
       },
       "transactionLogCap": {
         "name": "Transaction Log Cap",

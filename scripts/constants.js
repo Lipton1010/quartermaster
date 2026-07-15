@@ -18,6 +18,7 @@ export const FLAGS = {
   HIDDEN: "hidden",
   PER_ITEM_PERMISSION: "permission",
   HIDDEN_CURRENCY: "hiddenCurrency",
+  CURRENCY_CONFIG: "currencyConfig",
   LOOT_PREP_FOLDERS: "lootPrepFolders",
   BACKING_ACTOR_MARKER: "isQuartermasterBackingActor",
   INVENTORY_TOKEN_SHORTCUT: "isInventoryTokenShortcut"

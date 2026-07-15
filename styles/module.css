@@ -250,11 +250,14 @@
 /* Currency rail */
 .quartermaster .qm-currency-rail {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 6px;
 }
 
 .quartermaster .qm-currency-tile {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -273,8 +276,24 @@
 .quartermaster .qm-currency-label {
   font-size: 0.75em;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   opacity: 0.7;
+}
+
+.quartermaster .qm-currency-tile > :not(.qm-currency-tile-image) {
+  position: relative;
+  z-index: 1;
+}
+
+.quartermaster .qm-currency-tile-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.16;
+  pointer-events: none;
+  filter: saturate(0.85) brightness(1.08);
 }
 
 .quartermaster .qm-currency-value {
@@ -289,6 +308,7 @@
 .quartermaster .qm-currency-ep { border-top: 2px solid #a8b8b0; }
 .quartermaster .qm-currency-sp { border-top: 2px solid #c0c0c0; }
 .quartermaster .qm-currency-cp { border-top: 2px solid #b87333; }
+.quartermaster .qm-currency-custom { border-top: 2px solid #5ca8a6; }
 
 /* Section header (Resources, Items) */
 .quartermaster .qm-section-header {
@@ -1617,6 +1637,187 @@ body.qm-dragging {
 .qm-context-menu-danger:hover {
   background: rgba(255,107,107,0.18) !important;
   color: #ff8a8a !important;
+}
+
+.qm-currency-context-menu {
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+}
+
+/* Currency manager */
+.quartermaster .qm-currency-manager-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 14px;
+  gap: 12px;
+}
+
+.quartermaster .qm-currency-manager-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border-light-2, rgba(255,255,255,0.18));
+}
+
+.quartermaster .qm-currency-manager-toolbar h2,
+.quartermaster .qm-currency-manager-toolbar p {
+  margin: 0;
+}
+
+.quartermaster .qm-currency-manager-toolbar p {
+  margin-top: 3px;
+  color: var(--color-text-secondary, #b9b2aa);
+  font-size: 0.82em;
+}
+
+.quartermaster .qm-currency-manager-toolbar button {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 6px 10px;
+}
+
+.quartermaster .qm-currency-manager-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.quartermaster .qm-currency-manager-row {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--color-border-light-2, rgba(255,255,255,0.14));
+}
+
+.quartermaster .qm-currency-manager-row.qm-currency-is-hidden {
+  opacity: 0.62;
+}
+
+.quartermaster .qm-currency-manager-image {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-light-2, rgba(255,255,255,0.18));
+  border-radius: 4px;
+  background: rgba(0,0,0,0.18);
+}
+
+.quartermaster .qm-currency-manager-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.quartermaster .qm-currency-manager-details {
+  min-width: 0;
+}
+
+.quartermaster .qm-currency-manager-name,
+.quartermaster .qm-currency-manager-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.quartermaster .qm-currency-manager-name span,
+.quartermaster .qm-currency-manager-meta {
+  color: var(--color-text-secondary, #b9b2aa);
+  font-size: 0.78em;
+}
+
+.quartermaster .qm-currency-kind {
+  padding: 1px 5px;
+  border: 1px solid var(--color-border-light-2, rgba(255,255,255,0.18));
+  border-radius: 3px;
+}
+
+.quartermaster .qm-currency-manager-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.quartermaster .qm-currency-manager-actions button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+}
+
+.quartermaster .qm-currency-manager-actions .qm-currency-delete {
+  color: #e05d5d;
+}
+
+.quartermaster .qm-currency-edit .form-group {
+  margin-bottom: 12px;
+}
+
+.quartermaster .qm-currency-image-control {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 6px;
+}
+
+.quartermaster .qm-currency-image-preview {
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  border: 1px solid var(--color-border-light-2, rgba(255,255,255,0.18));
+  border-radius: 4px;
+}
+
+.quartermaster .qm-pick-currency-image {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+}
+
+.quartermaster .qm-conversion-fields {
+  margin: 4px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--color-border-light-2, rgba(255,255,255,0.18));
+  border-radius: 4px;
+}
+
+.quartermaster .qm-conversion-row {
+  display: grid;
+  grid-template-columns: auto minmax(90px, 1fr) minmax(130px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 520px) {
+  .quartermaster .qm-currency-manager-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .quartermaster .qm-currency-manager-row {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .quartermaster .qm-currency-manager-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .quartermaster .qm-conversion-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Inventory item row layout: add column for GM actions */

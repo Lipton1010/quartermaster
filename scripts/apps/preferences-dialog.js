@@ -120,7 +120,6 @@ export function promptInventoryPreferences() {
   const currentSort = game.settings.get(MODULE_ID, SETTINGS.SORT_ORDER);
   const currentSize = game.settings.get(MODULE_ID, SETTINGS.DEFAULT_ENTRY_SIZE);
   const currentHide = game.settings.get(MODULE_ID, SETTINGS.HIDE_ZERO_BALANCES);
-  const currentHideEP = game.settings.get(MODULE_ID, SETTINGS.HIDE_ELECTRUM);
 
   const content = `
     <form class="qm-pref-form" autocomplete="off">
@@ -144,17 +143,13 @@ export function promptInventoryPreferences() {
       <div class="qm-pref-row">
         ${checkbox("hideZero", currentHide, "Hide currencies at zero")}
       </div>
-      <div class="qm-pref-row">
-        ${checkbox("hideElectrum", currentHideEP, "Hide Electrum (EP)")}
-      </div>
     </form>
   `;
 
   return _showPreferencesDialog("Inventory Preferences", content, (root) => [
     [SETTINGS.SORT_ORDER, root.querySelector("[name='sortOrder']:checked")?.value ?? currentSort],
     [SETTINGS.DEFAULT_ENTRY_SIZE, root.querySelector("[name='entrySize']:checked")?.value ?? currentSize],
-    [SETTINGS.HIDE_ZERO_BALANCES, root.querySelector("[name='hideZero']")?.checked ?? currentHide],
-    [SETTINGS.HIDE_ELECTRUM, root.querySelector("[name='hideElectrum']")?.checked ?? currentHideEP]
+    [SETTINGS.HIDE_ZERO_BALANCES, root.querySelector("[name='hideZero']")?.checked ?? currentHide]
   ]);
 }
 

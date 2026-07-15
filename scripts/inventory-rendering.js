@@ -12,31 +12,7 @@
 
 import { MODULE_ID, FLAGS, SETTINGS, CHOICES } from "./constants.js";
 import { getRawTotals } from "./weight-cache.js";
-
-const CURRENCY_ORDER = ["pp", "gp", "ep", "sp", "cp"];
-const CURRENCY_SYMBOLS = {
-  pp: "PP",
-  gp: "GP",
-  ep: "EP",
-  sp: "SP",
-  cp: "CP"
-};
-const CURRENCY_NAMES = {
-  pp: "Platinum",
-  gp: "Gold",
-  ep: "Electrum",
-  sp: "Silver",
-  cp: "Copper"
-};
-
-// dnd5e conversion table to gp equivalent
-const TO_GP = {
-  pp: 10,
-  gp: 1,
-  ep: 0.5,
-  sp: 0.1,
-  cp: 0.01
-};
+import { getCurrencies } from "./currencies.js";
 
 const COINS_PER_POUND = 50;  // dnd5e standard
 
@@ -57,7 +33,10 @@ export function buildInventoryContext(actor) {
   }
 
   const settings = readSettings();
-  const currencies = buildCurrencies(actor, settings);
+  const currencies = getCurrencies(actor, {
+    includeHidden: false,
+    hideZero: settings.hideZeroBalances
+  }).map(currency => ({ ...currency, type: currency.id }));
   const resources = buildResources(actor);
   const items = buildItems(actor, settings);
 
@@ -67,17 +46,17 @@ export function buildInventoryContext(actor) {
 
   // Settings-derived values are computed at read time so toggling
   // applyCurrencyWeight or capacityLimit doesn't require cache invalidation.
+  const visibleStandardCoinCount = currencies
+    .filter(currency => !currency.isCustom)
+    .reduce((sum, currency) => sum + currency.value, 0);
   const currencyWeight = settings.applyCurrencyWeight
-    ? raw.coinSum / COINS_PER_POUND
+    ? visibleStandardCoinCount / COINS_PER_POUND
     : 0;
   const totalWeight = raw.itemWeight + currencyWeight;
 
-  const gpEquivalent =
-    (raw.coinValues.pp ?? 0) * TO_GP.pp +
-    (raw.coinValues.gp ?? 0) * TO_GP.gp +
-    (raw.coinValues.ep ?? 0) * TO_GP.ep +
-    (raw.coinValues.sp ?? 0) * TO_GP.sp +
-    (raw.coinValues.cp ?? 0) * TO_GP.cp;
+  const gpEquivalent = currencies.reduce((sum, currency) => {
+    return sum + (currency.gpRate == null ? 0 : currency.value * currency.gpRate);
+  }, 0);
 
   // Capacity state
   const capacity = buildCapacity(totalWeight, settings);
@@ -122,7 +101,6 @@ function readSettings() {
     capacityLimit: game.settings.get(MODULE_ID, SETTINGS.CAPACITY_LIMIT),
     applyCurrencyWeight: game.settings.get(MODULE_ID, SETTINGS.APPLY_CURRENCY_WEIGHT),
     hideZeroBalances: game.settings.get(MODULE_ID, SETTINGS.HIDE_ZERO_BALANCES),
-    hideElectrum: game.settings.get(MODULE_ID, SETTINGS.HIDE_ELECTRUM),
     sortOrder: game.settings.get(MODULE_ID, SETTINGS.SORT_ORDER),
     entrySize: game.settings.get(MODULE_ID, SETTINGS.DEFAULT_ENTRY_SIZE),
     unidentifiedDisplay: game.settings.get(MODULE_ID, SETTINGS.UNIDENTIFIED_DISPLAY),
@@ -135,23 +113,6 @@ function readSettings() {
 export function getInventoryButtonLabel() {
   const configured = game.settings.get(MODULE_ID, SETTINGS.INVENTORY_BUTTON_LABEL);
   return configured?.trim() || game.i18n.localize("quartermaster.buttons.sharedPartyInventory");
-}
-
-function buildCurrencies(actor, settings) {
-  const source = actor.system?.currency ?? {};
-  let rows = CURRENCY_ORDER.map(type => ({
-    type,
-    symbol: CURRENCY_SYMBOLS[type],
-    name: CURRENCY_NAMES[type],
-    value: source[type] ?? 0
-  }));
-  if (settings.hideElectrum) {
-    rows = rows.filter(r => r.type !== "ep");
-  }
-  if (settings.hideZeroBalances) {
-    rows = rows.filter(r => r.value > 0);
-  }
-  return rows;
 }
 
 function buildResources(actor) {

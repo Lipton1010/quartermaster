@@ -1,0 +1,61 @@
+{{#unless backingActorPresent}}
+  <div class="quartermaster-empty-state">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <p>Backing actor not initialized. Reload the world.</p>
+  </div>
+{{else}}
+<div class="qm-currency-manager-root">
+  <header class="qm-currency-manager-toolbar">
+    <div>
+      <h2>Currencies</h2>
+      <p>Hidden currencies retain their balances but do not appear in the inventory.</p>
+    </div>
+    <button type="button" data-action="add-currency" title="Add custom currency">
+      <i class="fa-solid fa-plus"></i> Add Currency
+    </button>
+  </header>
+
+  <div class="qm-currency-manager-list">
+    {{#each currencies}}
+    <article class="qm-currency-manager-row{{#if this.hidden}} qm-currency-is-hidden{{/if}}"
+             data-currency-id="{{this.id}}">
+      <div class="qm-currency-manager-image">
+        {{#if this.hasImage}}
+          <img src="{{this.image}}" alt="" />
+        {{else}}
+          <i class="fa-solid fa-coins"></i>
+        {{/if}}
+      </div>
+      <div class="qm-currency-manager-details">
+        <div class="qm-currency-manager-name">
+          <strong>{{this.name}}</strong>
+          <span>{{this.symbol}}</span>
+          <span class="qm-currency-kind">{{this.kindLabel}}</span>
+        </div>
+        <div class="qm-currency-manager-meta">
+          <span>{{this.value}} {{this.symbol}}</span>
+          <span>{{this.conversionLabel}}</span>
+          <span>{{this.visibilityLabel}}</span>
+        </div>
+      </div>
+      <div class="qm-currency-manager-actions">
+        <button type="button" data-action="toggle-currency" data-currency-id="{{this.id}}"
+                title="{{this.visibilityActionLabel}} {{this.name}}">
+          <i class="{{this.visibilityIcon}}"></i>
+        </button>
+        <button type="button" data-action="edit-currency" data-currency-id="{{this.id}}"
+                title="Edit {{this.name}}">
+          <i class="fa-solid fa-pen"></i>
+        </button>
+        {{#if this.isCustom}}
+        <button type="button" data-action="delete-currency" data-currency-id="{{this.id}}"
+                class="qm-currency-delete" title="Delete {{this.name}}">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+        {{/if}}
+      </div>
+    </article>
+    {{/each}}
+  </div>
+</div>
+{{/unless}}

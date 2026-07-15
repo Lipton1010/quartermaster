@@ -262,8 +262,10 @@ function formatTransfer(entry, direction, phase) {
 
 function formatCurrency(entry, phase) {
   const type = entry.currencyType ?? "??";
-  const symbol = type.toUpperCase();
-  const delta = typeof entry.delta === "number" ? entry.delta : 0;
+  const symbol = entry.currencySymbol || type.toUpperCase();
+  const delta = typeof entry.delta === "number"
+    ? entry.delta
+    : typeof entry.amount === "number" ? entry.amount : 0;
   const verb = delta > 0 ? "added" : delta < 0 ? "removed" : "no change";
   const abs = Math.abs(delta);
 

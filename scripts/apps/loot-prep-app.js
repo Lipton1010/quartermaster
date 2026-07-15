@@ -31,10 +31,9 @@ import {
 import { sanitizeItemForTransfer } from "../sanitization.js";
 import { QM_REHIDE_MARKER, QM_LOOTPREP_DRAG_MARKER } from "../drag-drop.js";
 import { writeEntry } from "../transaction-log.js";
+import { getCurrencies, getCurrency } from "../currencies.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
-
-const CURRENCY_SYMBOLS = { pp: "PP", gp: "GP", ep: "EP", sp: "SP", cp: "CP" };
 
 function escapeHtml(s) {
   if (typeof s !== "string") return "";
@@ -129,15 +128,20 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
       };
     });
 
-    const currencyEntries = hiddenCurrencyEntries.map(e => ({
-      id: e.id,
-      type: e.type,
-      symbol: CURRENCY_SYMBOLS[e.type] ?? e.type.toUpperCase(),
-      amount: e.amount,
-      label: `${e.amount} ${CURRENCY_SYMBOLS[e.type] ?? e.type.toUpperCase()}`,
-      folderId: e.folderId ?? null,
-      isCurrency: true
-    }));
+    const currencyEntries = hiddenCurrencyEntries.map(e => {
+      const currencyId = e.currencyId ?? e.type;
+      const currency = getCurrency(currencyId, actor);
+      const symbol = currency?.symbol ?? e.currencySymbol ?? String(currencyId).toUpperCase();
+      return {
+        id: e.id,
+        type: currencyId,
+        symbol,
+        amount: e.amount,
+        label: `${e.amount} ${symbol}`,
+        folderId: e.folderId ?? null,
+        isCurrency: true
+      };
+    });
 
     // Group items and currency by folder
     const folderData = folders.map(f => {
@@ -433,21 +437,27 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
 // ============================================================
 
 async function _promptCurrencyLoot(folderId) {
+  const currencies = getCurrencies(undefined, { includeHidden: true });
+  if (currencies.length === 0) {
+    ui.notifications.warn(`${MODULE_TITLE}: no currencies are configured.`);
+    return false;
+  }
+  const defaultId = currencies.find(currency => currency.id === "gp")?.id ?? currencies[0].id;
+  const options = currencies.map(currency =>
+    `<option value="${escapeHtml(currency.id)}"${currency.id === defaultId ? " selected" : ""}>`
+      + `${escapeHtml(currency.name)} (${escapeHtml(currency.symbol)})${currency.hidden ? " - Hidden" : ""}</option>`
+  ).join("");
   const content = `
     <form class="qm-pref-form" autocomplete="off">
       <div class="qm-pref-row">
         <label>Currency Type</label>
         <select name="currencyType" class="qm-pref-select">
-          <option value="pp">Platinum (PP)</option>
-          <option value="gp" selected>Gold (GP)</option>
-          <option value="ep">Electrum (EP)</option>
-          <option value="sp">Silver (SP)</option>
-          <option value="cp">Copper (CP)</option>
+          ${options}
         </select>
       </div>
       <div class="qm-pref-row">
         <label>Amount</label>
-        <input type="number" name="amount" min="1" value="10" style="width:100px;" />
+        <input type="number" name="amount" min="0.000001" step="any" value="10" style="width:100px;" />
       </div>
     </form>
   `;
@@ -478,8 +488,8 @@ async function _promptCurrencyLoot(folderId) {
           action: "save", label: "Add", icon: "fa-solid fa-plus", default: true,
           callback: (event, btn, dlg) => {
             const root = dlg.element ?? dlg;
-            const type = root.querySelector("[name='currencyType']")?.value ?? "gp";
-            const amount = parseInt(root.querySelector("[name='amount']")?.value, 10);
+            const type = root.querySelector("[name='currencyType']")?.value ?? defaultId;
+            const amount = Number.parseFloat(root.querySelector("[name='amount']")?.value);
             if (Number.isFinite(amount) && amount > 0) {
               formValues = { type, amount };
             }

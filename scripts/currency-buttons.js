@@ -12,18 +12,11 @@
 
 import { MODULE_ID, MODULE_TITLE } from "./constants.js";
 import { PAYLOAD_TYPES, submitRequest } from "./socket-handler.js";
-import { getBackingActor } from "./backing-actor.js";
 import { needsApprovalForCurrentUser } from "./approval-policy.js";
+import { getCurrency, getCurrencies, setCurrencyHidden } from "./currencies.js";
+import { openCurrencyEditor, openCurrencyManager } from "./apps/currency-manager-app.js";
 
 const { DialogV2 } = foundry.applications.api;
-
-const CURRENCY_FULL_NAMES = {
-  pp: "Platinum Pieces",
-  gp: "Gold Pieces",
-  ep: "Electrum Pieces",
-  sp: "Silver Pieces",
-  cp: "Copper Pieces"
-};
 
 const QUICK_PICKS = [1, 5, 10, 25, 100];
 
@@ -45,6 +38,12 @@ export function attachCurrencyButtons(app) {
     btn.addEventListener("click", onCurrencyButtonClick);
   }
 
+  if (game.user.isGM) {
+    for (const tile of el.querySelectorAll(".qm-currency-tile[data-currency-id]")) {
+      tile.addEventListener("contextmenu", event => showCurrencyContextMenu(event, app));
+    }
+  }
+
   console.debug(
     `${MODULE_TITLE} | currency buttons wired: ${buttons.length}`
   );
@@ -60,8 +59,10 @@ async function onCurrencyButtonClick(event) {
 
   const btn = event.currentTarget;
   const action = btn.dataset.action; // "currency-add" | "currency-remove"
-  const currencyType = btn.dataset.currency; // pp | gp | ep | sp | cp
+  const currencyType = btn.dataset.currencyId;
   if (!action || !currencyType) return;
+  const currency = getCurrency(currencyType);
+  if (!currency) return;
 
   const direction = action === "currency-add" ? "add" : "remove";
 
@@ -73,13 +74,10 @@ async function onCurrencyButtonClick(event) {
   }
 
   // Normal click: open the amount dialog
-  const backingActor = getBackingActor();
-  const currentBalance = backingActor?.system?.currency?.[currencyType] ?? 0;
-
   const amount = await promptCurrencyAmount({
-    currencyType,
+    currency,
     direction,
-    currentBalance
+    currentBalance: currency.value
   });
 
   if (amount === null || amount === 0) return;
@@ -96,11 +94,11 @@ async function onCurrencyButtonClick(event) {
  * Show a dialog to pick an amount for a currency change. Returns the
  * positive amount entered, or null if cancelled.
  */
-async function promptCurrencyAmount({ currencyType, direction, currentBalance }) {
+async function promptCurrencyAmount({ currency, direction, currentBalance }) {
   const isAdd = direction === "add";
-  const fullName = CURRENCY_FULL_NAMES[currencyType] ?? currencyType.toUpperCase();
+  const fullName = currency.name;
   const verb = isAdd ? "Add" : "Remove";
-  const symbol = currencyType.toUpperCase();
+  const symbol = currency.symbol;
 
   const quickPickHtml = QUICK_PICKS
     .map(n => `<button type="button" class="qm-pick" data-amount="${n}">${n}</button>`)
@@ -122,9 +120,9 @@ async function promptCurrencyAmount({ currencyType, direction, currentBalance })
           id="qm-amount-input"
           name="amount"
           value=""
-          min="1"
+          min="0.000001"
           max="999999"
-          step="1"
+          step="any"
           autofocus
         />
       </div>
@@ -148,7 +146,7 @@ async function promptCurrencyAmount({ currencyType, direction, currentBalance })
           default: true,
           callback: (event, button, dlg) => {
             const input = dlg.element.querySelector("#qm-amount-input");
-            const raw = parseInt(input?.value ?? "0", 10);
+            const raw = Number.parseFloat(input?.value ?? "0");
             const amount = Number.isFinite(raw) && raw > 0 ? raw : 0;
             resolved = true;
             resolve(amount);
@@ -193,12 +191,14 @@ async function promptCurrencyAmount({ currencyType, direction, currentBalance })
 
 async function submitCurrencyChange({ currencyType, delta, reason = "manual" }) {
   const requestId = `qm-${foundry.utils.randomID()}`;
+  const currency = getCurrency(currencyType);
+  const gpValue = currency?.gpRate == null ? 0 : Math.abs(delta * currency.gpRate);
 
   // If approval is likely needed (player-side, non-FREE mode), show a
   // pending notice so the user knows the GM was prompted and the lag is
   // expected. GMs adjusting their own currency skip this entirely.
   let pendingNotif = null;
-  if (needsApprovalForCurrentUser({ delta })) {
+  if (needsApprovalForCurrentUser({ delta, gpValue })) {
     pendingNotif = ui.notifications.info(
       `${MODULE_TITLE}: waiting for GM approval...`,
       { permanent: true }
@@ -229,7 +229,8 @@ async function submitCurrencyChange({ currencyType, delta, reason = "manual" }) 
 }
 
 function notifyCurrencyResult(result, currencyType, delta) {
-  const symbol = currencyType.toUpperCase();
+  const currency = getCurrency(currencyType);
+  const symbol = result?.resultData?.currencySymbol ?? currency?.symbol ?? currencyType.toUpperCase();
   const absAmount = Math.abs(delta);
   const isAdd = delta >= 0;
 
@@ -291,4 +292,101 @@ function notifyCurrencyResult(result, currencyType, delta) {
   ui.notifications.error(
     `Currency change failed: ${result.error ?? "unknown error"}`
   );
+}
+
+// ============================================================
+// GM right-click visibility menu
+// ============================================================
+
+let currencyMenuOutsideHandler = null;
+
+function showCurrencyContextMenu(event, app) {
+  event.preventDefault();
+  event.stopPropagation();
+  closeCurrencyContextMenu();
+
+  const currencyId = event.currentTarget.dataset.currencyId;
+  const currency = getCurrency(currencyId);
+  if (!currency) return;
+  const hidden = getCurrencies(undefined, { includeHidden: true })
+    .filter(entry => entry.hidden);
+
+  const menu = document.createElement("nav");
+  menu.className = "qm-context-menu qm-currency-context-menu";
+  const list = document.createElement("ul");
+  list.className = "qm-context-menu-list";
+  menu.appendChild(list);
+
+  addMenuItem(list, {
+    icon: "fa-solid fa-eye-slash",
+    label: `Hide ${currency.name}`,
+    action: async () => {
+      await setCurrencyHidden(currency.id, true);
+      app.render();
+    }
+  });
+  addMenuItem(list, {
+    icon: "fa-solid fa-pen",
+    label: `Edit ${currency.name}`,
+    action: async () => {
+      await openCurrencyEditor(currency.id);
+      app.render();
+    }
+  });
+
+  for (const entry of hidden) {
+    addMenuItem(list, {
+      icon: "fa-solid fa-eye",
+      label: `Show ${entry.name}`,
+      action: async () => {
+        await setCurrencyHidden(entry.id, false);
+        app.render();
+      }
+    });
+  }
+
+  addMenuItem(list, {
+    icon: "fa-solid fa-coins",
+    label: "Manage Currencies...",
+    action: () => openCurrencyManager()
+  });
+
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(4, Math.min(event.clientX, window.innerWidth - rect.width - 4))}px`;
+  menu.style.top = `${Math.max(4, Math.min(event.clientY, window.innerHeight - rect.height - 4))}px`;
+  // Keep clicks inside the menu alive. The old one-shot pointerdown handler
+  // removed the menu before its later click event could run an action.
+  currencyMenuOutsideHandler = pointerEvent => {
+    if (pointerEvent.target?.closest?.(".qm-currency-context-menu")) return;
+    closeCurrencyContextMenu();
+  };
+  setTimeout(() => {
+    document.addEventListener("pointerdown", currencyMenuOutsideHandler, true);
+  }, 0);
+}
+
+function addMenuItem(list, { icon, label, action }) {
+  const item = document.createElement("li");
+  item.className = "qm-context-menu-item";
+  const iconEl = document.createElement("i");
+  iconEl.className = icon;
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  item.append(iconEl, labelEl);
+  item.addEventListener("click", async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeCurrencyContextMenu();
+    await action();
+  });
+  list.appendChild(item);
+}
+
+function closeCurrencyContextMenu() {
+  if (currencyMenuOutsideHandler) {
+    document.removeEventListener("pointerdown", currencyMenuOutsideHandler, true);
+    currencyMenuOutsideHandler = null;
+  }
+  document.querySelectorAll(".qm-currency-context-menu").forEach(menu => menu.remove());
 }

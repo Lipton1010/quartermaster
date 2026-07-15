@@ -21,9 +21,10 @@ import { MODULE_ID, SETTINGS, CHOICES } from "./constants.js";
  * @param {Object} request
  * @param {string} request.userId - the user submitting the request
  * @param {number} request.delta  - signed delta (positive=add, negative=remove)
+ * @param {number|null} [request.gpValue] - absolute converted GP value
  * @returns {boolean}
  */
-export function needsApproval({ userId, delta }) {
+export function needsApproval({ userId, delta, gpValue }) {
   // GMs auto-approve themselves
   const user = game.users?.get?.(userId);
   if (user?.isGM) return false;
@@ -50,7 +51,10 @@ export function needsApproval({ userId, delta }) {
     if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
       threshold = 100;
     }
-    return Math.abs(delta) >= threshold;
+    const comparisonValue = typeof gpValue === "number" && Number.isFinite(gpValue)
+      ? Math.abs(gpValue)
+      : Math.abs(delta);
+    return comparisonValue >= threshold;
   }
 
   // Unknown mode: fail safe
@@ -62,8 +66,8 @@ export function needsApproval({ userId, delta }) {
  * about to submit need approval? Used by the inventory UI to show a
  * "waiting for GM" pending notice.
  */
-export function needsApprovalForCurrentUser({ delta }) {
-  return needsApproval({ userId: game.user?.id, delta });
+export function needsApprovalForCurrentUser({ delta, gpValue }) {
+  return needsApproval({ userId: game.user?.id, delta, gpValue });
 }
 
 /**

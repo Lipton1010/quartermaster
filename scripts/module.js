@@ -115,6 +115,8 @@ import * as LootPrepFolders from "./loot-prep-folders.js";
 import * as ContextMenu from "./context-menu.js";
 import { registerCompendiumContextMenu } from "./compendium-menu.js";
 import * as InventoryToken from "./inventory-token.js";
+import * as Currencies from "./currencies.js";
+import { openCurrencyManager } from "./apps/currency-manager-app.js";
 
 /**
  * Foundry lifecycle: init
@@ -136,6 +138,7 @@ Hooks.once("ready", async () => {
   console.log(`${MODULE_TITLE} | Ready`);
 
   await ensureBackingActor();
+  await Currencies.ensureCurrencyConfig();
   initializeCoordinator();
   registerInventoryRefreshHooks();
   WeightCache.registerWeightCacheHooks();
@@ -149,7 +152,7 @@ Hooks.once("ready", async () => {
   const module = game.modules.get(MODULE_ID);
   if (module) {
     module.api = {
-      version: "0.1.0",
+      version: game.modules.get(MODULE_ID)?.version ?? "unknown",
       coordinator: {
         executeOperation,
         diagnostics: coordinatorDiagnostics
@@ -165,6 +168,7 @@ Hooks.once("ready", async () => {
         isInventoryOpen: isInventoryAppOpen,
         refreshInventory: forceInventoryRefresh,
         scheduleInventoryRefresh,
+        openCurrencyManager,
         openLootPrep: openLootPrepApp,
         closeLootPrep: closeLootPrepApp,
         isLootPrepOpen: isLootPrepAppOpen,
@@ -181,6 +185,7 @@ Hooks.once("ready", async () => {
       lootPrepFolders: LootPrepFolders,
       contextMenu: ContextMenu,
       inventoryToken: InventoryToken,
+      currencies: Currencies,
       sanitization: Sanitization,
       weightCache: WeightCache,
       claimCommit: ClaimCommit,
@@ -214,7 +219,7 @@ Hooks.once("ready", async () => {
     };
   }
 
-  console.log(`${MODULE_TITLE} | v0.1.0 loaded (step 18 ready)`);
+  console.log(`${MODULE_TITLE} | v${game.modules.get(MODULE_ID)?.version ?? "unknown"} loaded`);
 });
 
 /**

@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.6] - 2026-07-10
+
+### Added
+- Add unlimited GM-defined custom currencies with configurable names, short labels, decimal balances, and optional tile background images.
+- Add optional custom-currency conversion rates using PP, GP, EP, SP, or CP as the target denomination.
+- Add a GM currency manager for creating, editing, deleting, hiding, and restoring currencies.
+- Add a visible GM-only Manage Currencies button to the inventory item toolbar.
+- Add GM right-click actions on currency tiles to hide, edit, restore, or manage currencies.
+- Support custom currencies in GM Loot Prep staging, reveal operations, approval dialogs, and the transaction log.
+- Allow optional tile background images for the five built-in currencies.
+
+### Changed
+- Hidden currencies are omitted from the inventory, converted GP total, and visible currency-weight calculation for all users.
+- Threshold approval mode now compares converted GP value when a conversion is available.
+- Preserve the former Hide Electrum preference as a one-time seed for the new shared currency visibility configuration.
+
+### Fixed
+- Fix currency right-click actions being canceled before their click handlers could run.
+
+
 ## [0.1.5] - 2026-06-29
 
 ### Added
