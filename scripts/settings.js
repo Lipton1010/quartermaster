@@ -63,8 +63,7 @@ export function registerSettings() {
     scope: "world",
     config: true,
     type: Number,
-    default: 50,
-    range: { min: 0, max: 10000, step: 1 }
+    default: 50
   });
 
   game.settings.register(MODULE_ID, SETTINGS.USE_APPROVAL_TIMEOUT, {

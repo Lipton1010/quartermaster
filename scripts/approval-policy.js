@@ -21,10 +21,11 @@ import { MODULE_ID, SETTINGS, CHOICES } from "./constants.js";
  * @param {Object} request
  * @param {string} request.userId - the user submitting the request
  * @param {number} request.delta  - signed delta (positive=add, negative=remove)
- * @param {number|null} [request.gpValue] - absolute converted GP value
+ * @param {number|null} [request.referenceValue] - absolute value converted to the selected reference currency
+ * @param {number|null} [request.gpValue] - legacy v0.1.6 converted GP value
  * @returns {boolean}
  */
-export function needsApproval({ userId, delta, gpValue }) {
+export function needsApproval({ userId, delta, referenceValue, gpValue }) {
   // GMs auto-approve themselves
   const user = game.users?.get?.(userId);
   if (user?.isGM) return false;
@@ -51,8 +52,12 @@ export function needsApproval({ userId, delta, gpValue }) {
     if (typeof threshold !== "number" || !Number.isFinite(threshold)) {
       threshold = 100;
     }
-    const comparisonValue = typeof gpValue === "number" && Number.isFinite(gpValue)
-      ? Math.abs(gpValue)
+    threshold = Math.max(0, threshold);
+    const convertedValue = typeof referenceValue === "number" && Number.isFinite(referenceValue)
+      ? referenceValue
+      : gpValue;
+    const comparisonValue = typeof convertedValue === "number" && Number.isFinite(convertedValue)
+      ? Math.abs(convertedValue)
       : Math.abs(delta);
     return comparisonValue >= threshold;
   }
@@ -66,8 +71,8 @@ export function needsApproval({ userId, delta, gpValue }) {
  * about to submit need approval? Used by the inventory UI to show a
  * "waiting for GM" pending notice.
  */
-export function needsApprovalForCurrentUser({ delta, gpValue }) {
-  return needsApproval({ userId: game.user?.id, delta, gpValue });
+export function needsApprovalForCurrentUser({ delta, referenceValue, gpValue }) {
+  return needsApproval({ userId: game.user?.id, delta, referenceValue, gpValue });
 }
 
 /**

@@ -46,6 +46,9 @@
         <button type="button" data-action="add-currency-loot" class="qm-prep-secondary" title="Stage currency loot">
           <i class="fa-solid fa-coins"></i> Add Currency
         </button>
+        <button type="button" data-action="manage-currencies" class="qm-prep-secondary" title="Manage currency visibility, conversions, weights, and reference currency">
+          <i class="fa-solid fa-gear"></i> Manage Currencies
+        </button>
         <button type="button" data-action="create-folder" class="qm-prep-secondary" title="Create a folder">
           <i class="fa-solid fa-folder-plus"></i> New Folder
         </button>
@@ -62,14 +65,24 @@
         {{/if}}
       </div>
     </header>
+    <p class="qm-loot-notes-hint">
+      <i class="fa-solid fa-note-sticky"></i>
+      Right-click a folder or item to add a note. Item notes override folder notes.
+    </p>
 
     {{!-- Folders --}}
     {{#each folders}}
       <div class="qm-folder qm-hidden-drop-zone" data-folder-id="{{this.id}}">
-        <div class="qm-folder-header">
+        <div class="qm-folder-header" data-folder-id="{{this.id}}" title="Right-click to add or edit this folder's note">
           <i class="fa-solid fa-folder-open"></i>
           <span class="qm-folder-name">{{this.name}}</span>
           <span class="qm-folder-count">({{this.totalEntries}})</span>
+          {{#if this.hasNote}}
+            <button type="button" data-action="edit-folder-note" data-folder-id="{{this.id}}"
+                    class="qm-folder-btn qm-folder-note-indicator" title="Edit folder note">
+              <i class="fa-solid fa-note-sticky"></i>
+            </button>
+          {{/if}}
           <div class="qm-folder-actions">
             <button type="button" data-action="create-item" data-folder-id="{{this.id}}" title="Create item in this folder" class="qm-folder-btn"><i class="fa-solid fa-plus"></i></button>
             <button type="button" data-action="add-currency-loot" data-folder-id="{{this.id}}" title="Add currency to this folder" class="qm-folder-btn"><i class="fa-solid fa-coins"></i></button>
@@ -98,6 +111,13 @@
               <div class="qm-hidden-item-info">
                 <div class="qm-hidden-item-name">{{this.name}}</div>
                 {{#if this.sourcePack}}<div class="qm-hidden-item-source">{{this.sourcePack}}</div>{{/if}}
+                {{#if this.hasNote}}
+                  <div class="qm-loot-note" data-note-source="{{this.noteSource}}">
+                    <i class="fa-solid fa-note-sticky"></i>
+                    <span class="qm-loot-note-source">{{this.noteSourceLabel}}</span>
+                    <span class="qm-loot-note-text">{{this.note}}</span>
+                  </div>
+                {{/if}}
               </div>
               <div class="qm-hidden-item-meta">
                 <span class="qm-hidden-item-qty" title="Quantity">×{{this.qty}}</span>
@@ -143,6 +163,13 @@
           <div class="qm-hidden-item-info">
             <div class="qm-hidden-item-name">{{this.name}}</div>
             {{#if this.sourcePack}}<div class="qm-hidden-item-source">{{this.sourcePack}}</div>{{/if}}
+            {{#if this.hasNote}}
+              <div class="qm-loot-note" data-note-source="{{this.noteSource}}">
+                <i class="fa-solid fa-note-sticky"></i>
+                <span class="qm-loot-note-source">{{this.noteSourceLabel}}</span>
+                <span class="qm-loot-note-text">{{this.note}}</span>
+              </div>
+            {{/if}}
           </div>
           <div class="qm-hidden-item-meta">
             <span class="qm-hidden-item-qty" title="Quantity">×{{this.qty}}</span>

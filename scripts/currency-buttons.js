@@ -192,13 +192,15 @@ async function promptCurrencyAmount({ currency, direction, currentBalance }) {
 async function submitCurrencyChange({ currencyType, delta, reason = "manual" }) {
   const requestId = `qm-${foundry.utils.randomID()}`;
   const currency = getCurrency(currencyType);
-  const gpValue = currency?.gpRate == null ? 0 : Math.abs(delta * currency.gpRate);
+  const referenceValue = currency?.referenceRate == null
+    ? 0
+    : Math.abs(delta * currency.referenceRate);
 
   // If approval is likely needed (player-side, non-FREE mode), show a
   // pending notice so the user knows the GM was prompted and the lag is
   // expected. GMs adjusting their own currency skip this entirely.
   let pendingNotif = null;
-  if (needsApprovalForCurrentUser({ delta, gpValue })) {
+  if (needsApprovalForCurrentUser({ delta, referenceValue })) {
     pendingNotif = ui.notifications.info(
       `${MODULE_TITLE}: waiting for GM approval...`,
       { permanent: true }

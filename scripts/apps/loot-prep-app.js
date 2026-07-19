@@ -28,10 +28,14 @@ import {
 import {
   getFolders, createFolder, renameFolder, deleteFolder, setItemFolder
 } from "../loot-prep-folders.js";
+import {
+  getEffectiveItemNote, getFolderNote, getItemNote, setFolderNote, setItemNote
+} from "../loot-prep-notes.js";
 import { sanitizeItemForTransfer } from "../sanitization.js";
 import { QM_REHIDE_MARKER, QM_LOOTPREP_DRAG_MARKER } from "../drag-drop.js";
 import { writeEntry } from "../transaction-log.js";
 import { getCurrencies, getCurrency } from "../currencies.js";
+import { openCurrencyManager } from "./currency-manager-app.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
@@ -84,11 +88,13 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
       "create-item":        LootPrepApp.onCreateItem,
       // Currency loot
       "add-currency-loot":     LootPrepApp.onAddCurrencyLoot,
+      "manage-currencies":     LootPrepApp.onManageCurrencies,
       "reveal-currency":       LootPrepApp.onRevealCurrency,
       "delete-currency":       LootPrepApp.onDeleteCurrency,
       // Folders
       "create-folder":      LootPrepApp.onCreateFolder,
       "rename-folder":      LootPrepApp.onRenameFolder,
+      "edit-folder-note":   LootPrepApp.onEditFolderNote,
       "delete-folder":      LootPrepApp.onDeleteFolder,
       "move-to-folder":     LootPrepApp.onMoveToFolder
     }
@@ -107,6 +113,7 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const hiddenItemDocs = actor ? getHiddenItems(actor) : [];
     const hiddenCurrencyEntries = actor ? getHiddenCurrency(actor) : [];
     const folders = actor ? getFolders(actor) : [];
+    const foldersById = new Map(folders.map(folder => [folder.id, folder]));
 
     const hiddenItems = hiddenItemDocs.map(item => {
       const sys = item.system ?? {};
@@ -118,12 +125,18 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const sourcePack = sourceUuid
         ? sourceUuid.replace(/^Compendium\./, "").split(".").slice(0, 2).join(".") : null;
       const priceDisplay = _formatPrice(sys.price?.value, sys.price?.denomination, qty);
+      const folderId = item.getFlag(MODULE_ID, "lootPrepFolder") ?? null;
+      const effectiveNote = getEffectiveItemNote(item, foldersById.get(folderId));
       return {
         id: item.id, name: item.name ?? "(unnamed)",
         img: item.img ?? "icons/svg/item-bag.svg",
         qty, weight, sourcePack, priceDisplay,
         hasPrice: !!priceDisplay,
-        folderId: item.getFlag(MODULE_ID, "lootPrepFolder") ?? null,
+        folderId,
+        note: effectiveNote.note,
+        hasNote: !!effectiveNote.note,
+        noteSource: effectiveNote.source,
+        noteSourceLabel: effectiveNote.source === "item" ? "Item" : "Folder",
         isCurrency: false
       };
     });
@@ -147,8 +160,9 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const folderData = folders.map(f => {
       const fItems = hiddenItems.filter(i => i.folderId === f.id);
       const fCurrency = currencyEntries.filter(c => c.folderId === f.id);
+      const note = getFolderNote(f);
       return {
-        ...f, items: fItems, currency: fCurrency,
+        ...f, note, hasNote: !!note, items: fItems, currency: fCurrency,
         totalEntries: fItems.length + fCurrency.length
       };
     });
@@ -198,6 +212,7 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     attachHiddenItemDragDrop(this);
     _wireHiddenItemDrag(this);
     _wireDoubleClick(this);
+    _wireLootPrepNotes(this);
   }
 
   // ================================================================
@@ -361,6 +376,11 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (result) this.render();
   }
 
+  static async onManageCurrencies() {
+    if (!game.user.isGM) return;
+    await openCurrencyManager();
+  }
+
   static async onRevealCurrency(event, target) {
     if (!game.user.isGM) return;
     const entryId = target.dataset.currencyId;
@@ -406,6 +426,11 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
       await renameFolder(folderId, result);
       this.render();
     }
+  }
+
+  static async onEditFolderNote(event, target) {
+    if (!game.user.isGM) return;
+    await _editFolderNote(this, target.dataset.folderId);
   }
 
   static async onDeleteFolder(event, target) {
@@ -689,6 +714,141 @@ async function _promptFolderName(title, currentName) {
   });
 }
 
+async function _promptLootPrepNote({ title, currentNote = "", inheritedNote = "" }) {
+  const inheritanceHint = inheritedNote
+    ? currentNote
+      ? `<p class="hint">This item overrides the folder note: <em>${escapeHtml(inheritedNote)}</em>. Clear the item note and save to restore inheritance.</p>`
+      : `<p class="hint">This item currently inherits the folder note: <em>${escapeHtml(inheritedNote)}</em>. Saving an item note overrides it.</p>`
+    : `<p class="hint">Clear the note and save to remove it.</p>`;
+  const content = `
+    <form class="qm-pref-form qm-loot-note-form" autocomplete="off">
+      <div class="qm-pref-row qm-loot-note-dialog-row">
+        <label>Note</label>
+        <textarea name="lootPrepNote" rows="5" maxlength="2000" placeholder="Where is this loot found?">${escapeHtml(currentNote)}</textarea>
+      </div>
+      ${inheritanceHint}
+    </form>
+  `;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    let closeHookId = null;
+    let saved = false;
+    let result = "";
+
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      if (closeHookId !== null) {
+        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
+      }
+      resolve(saved ? result : null);
+    };
+
+    const dialog = new DialogV2({
+      window: { title, icon: "fa-solid fa-note-sticky" },
+      content,
+      rejectClose: false,
+      buttons: [
+        {
+          action: "save", label: "Save Note", icon: "fa-solid fa-check", default: true,
+          callback: (event, btn, dlg) => {
+            const root = dlg.element ?? dlg;
+            result = root.querySelector("[name='lootPrepNote']")?.value?.trim() ?? "";
+            saved = true;
+          }
+        },
+        {
+          action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
+          callback: () => { saved = false; }
+        }
+      ]
+    });
+
+    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
+      if (closedApp === dialog) finish();
+    });
+
+    dialog.render({ force: true });
+  });
+}
+
+// ============================================================
+// Loot Prep note wiring
+// ============================================================
+
+function _wireLootPrepNotes(app) {
+  const el = app?.element;
+  if (!el || !game.user.isGM) return;
+
+  for (const header of el.querySelectorAll(".qm-folder-header[data-folder-id]")) {
+    header.addEventListener("contextmenu", (event) => {
+      if (event.target.closest("button, input")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void _editFolderNote(app, header.dataset.folderId);
+    });
+  }
+
+  for (const row of el.querySelectorAll(".qm-hidden-item-row[data-item-id]")) {
+    row.addEventListener("contextmenu", (event) => {
+      if (event.target.closest("button, input")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void _editItemNote(app, row.dataset.itemId);
+    });
+  }
+}
+
+async function _editFolderNote(app, folderId) {
+  if (!folderId) return;
+  const actor = getBackingActor();
+  const folder = getFolders(actor).find(entry => entry.id === folderId);
+  if (!folder) return;
+
+  const note = await _promptLootPrepNote({
+    title: `Folder Note: ${folder.name}`,
+    currentNote: getFolderNote(folder)
+  });
+  if (note === null) return;
+
+  const saved = await setFolderNote(folderId, note);
+  if (!saved) {
+    ui.notifications.error(`${MODULE_TITLE}: could not save the folder note.`);
+    return;
+  }
+  ui.notifications.info(note ? `Folder note saved.` : `Folder note cleared.`);
+  app.render();
+}
+
+async function _editItemNote(app, itemId) {
+  if (!itemId) return;
+  const actor = getBackingActor();
+  const item = actor?.items.get(itemId);
+  if (!item) return;
+
+  const folderId = item.getFlag(MODULE_ID, "lootPrepFolder") ?? null;
+  const folder = folderId ? getFolders(actor).find(entry => entry.id === folderId) : null;
+  const inheritedNote = getFolderNote(folder);
+  const note = await _promptLootPrepNote({
+    title: `Item Note: ${item.name ?? "(unnamed)"}`,
+    currentNote: getItemNote(item),
+    inheritedNote
+  });
+  if (note === null) return;
+
+  const saved = await setItemNote(itemId, note);
+  if (!saved) {
+    ui.notifications.error(`${MODULE_TITLE}: could not save the item note.`);
+    return;
+  }
+  const message = note
+    ? `Item note saved.`
+    : inheritedNote ? `Item note cleared; the folder note now applies.` : `Item note cleared.`;
+  ui.notifications.info(message);
+  app.render();
+}
+
 // ============================================================
 // Drag-drop wiring
 // ============================================================
@@ -879,7 +1039,8 @@ export function registerLootPrepRefreshHooks() {
     const b = getBacking();
     if (!b || item.parent?.id !== b.id) return;
     if (foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.HIDDEN}`) ||
-        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.lootPrepFolder`)) {
+        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.lootPrepFolder`) ||
+        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.LOOT_PREP_NOTE}`)) {
       scheduleLootPrepRefresh();
     }
   });

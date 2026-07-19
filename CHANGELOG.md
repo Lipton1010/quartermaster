@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.7] - 2026-07-18
+
+### Added
+- Add GM Loot Prep notes through right-click folder and item editors. Folder notes apply to every item in the folder, while individual item notes take precedence.
+- Add a selectable reference currency and editable reference-relative conversion rates for every built-in and custom currency.
+- Add an optional per-unit weight to custom currencies; built-in currencies remain fixed at 50 coins per pound.
+- Add a Manage Currencies shortcut to GM Loot Prep and make folder-note indicators clickable for editing.
+
+### Changed
+- Rebase currency rates and the configured approval threshold automatically when the reference currency changes, preserving established economic relationships.
+- Show inventory equivalent totals and evaluate approval thresholds in the selected reference currency.
+- Migrate existing custom-currency conversions to the new reference model without changing their effective GP value.
+- Update verified Foundry VTT compatibility metadata to v14.365.
+
+
 ## [0.1.6] - 2026-07-10
 
 ### Added

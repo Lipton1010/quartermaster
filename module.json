@@ -2,10 +2,10 @@
   "id": "quartermaster",
   "title": "Quartermaster",
   "description": "Shared party inventory and currency tracker for D&D 5e on Foundry VTT. A richer alternative to fvtt-party-resources, featuring drag-and-drop item sharing, multi-currency tracking, GM loot prep, approval workflows for currency changes, and a full transaction log.",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "compatibility": {
     "minimum": "13",
-    "verified": "14.364",
+    "verified": "14.365",
     "maximum": "14"
   },
   "authors": [

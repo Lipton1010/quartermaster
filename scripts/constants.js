@@ -20,6 +20,7 @@ export const FLAGS = {
   HIDDEN_CURRENCY: "hiddenCurrency",
   CURRENCY_CONFIG: "currencyConfig",
   LOOT_PREP_FOLDERS: "lootPrepFolders",
+  LOOT_PREP_NOTE: "lootPrepNote",
   BACKING_ACTOR_MARKER: "isQuartermasterBackingActor",
   INVENTORY_TOKEN_SHORTCUT: "isInventoryTokenShortcut"
 };

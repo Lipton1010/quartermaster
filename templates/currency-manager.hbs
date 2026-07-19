@@ -8,12 +8,24 @@
   <header class="qm-currency-manager-toolbar">
     <div>
       <h2>Currencies</h2>
-      <p>Hidden currencies retain their balances but do not appear in the inventory.</p>
+      <p>Set exchange rates against one fixed reference currency.</p>
     </div>
     <button type="button" data-action="add-currency" title="Add custom currency">
       <i class="fa-solid fa-plus"></i> Add Currency
     </button>
   </header>
+
+  <div class="qm-reference-currency-control">
+    <label for="qm-reference-currency"><i class="fa-solid fa-scale-balanced"></i> Reference Currency</label>
+    <select id="qm-reference-currency" class="qm-reference-currency-select">
+      {{#each referenceOptions}}
+        <option value="{{this.id}}"{{#if this.isReference}} selected{{/if}}{{#unless this.canBeReference}} disabled{{/unless}}>
+          {{this.name}} ({{this.symbol}}){{#unless this.canBeReference}} — set a rate first{{/unless}}
+        </option>
+      {{/each}}
+    </select>
+    <p>Totals and approval thresholds use {{referenceCurrency.symbol}}. Changing the reference preserves exchange relationships and rebases the existing threshold.</p>
+  </div>
 
   <div class="qm-currency-manager-list">
     {{#each currencies}}
@@ -35,12 +47,14 @@
         <div class="qm-currency-manager-meta">
           <span>{{this.value}} {{this.symbol}}</span>
           <span>{{this.conversionLabel}}</span>
+          <span>{{this.weightLabel}}</span>
           <span>{{this.visibilityLabel}}</span>
         </div>
       </div>
       <div class="qm-currency-manager-actions">
         <button type="button" data-action="toggle-currency" data-currency-id="{{this.id}}"
-                title="{{this.visibilityActionLabel}} {{this.name}}">
+                title="{{#if this.canHide}}{{this.visibilityActionLabel}} {{this.name}}{{else}}The reference currency cannot be hidden{{/if}}"
+                {{#unless this.canHide}}disabled{{/unless}}>
           <i class="{{this.visibilityIcon}}"></i>
         </button>
         <button type="button" data-action="edit-currency" data-currency-id="{{this.id}}"
@@ -49,7 +63,9 @@
         </button>
         {{#if this.isCustom}}
         <button type="button" data-action="delete-currency" data-currency-id="{{this.id}}"
-                class="qm-currency-delete" title="Delete {{this.name}}">
+                class="qm-currency-delete"
+                title="{{#if this.canDelete}}Delete {{this.name}}{{else}}Choose another reference currency before deleting this one{{/if}}"
+                {{#unless this.canDelete}}disabled{{/unless}}>
           <i class="fa-solid fa-trash"></i>
         </button>
         {{/if}}

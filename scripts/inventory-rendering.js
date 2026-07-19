@@ -12,7 +12,7 @@
 
 import { MODULE_ID, FLAGS, SETTINGS, CHOICES } from "./constants.js";
 import { getRawTotals } from "./weight-cache.js";
-import { getCurrencies } from "./currencies.js";
+import { getCurrencies, getReferenceCurrency } from "./currencies.js";
 
 const COINS_PER_POUND = 50;  // dnd5e standard
 
@@ -37,6 +37,7 @@ export function buildInventoryContext(actor) {
     includeHidden: false,
     hideZero: settings.hideZeroBalances
   }).map(currency => ({ ...currency, type: currency.id }));
+  const referenceCurrency = getReferenceCurrency(actor);
   const resources = buildResources(actor);
   const items = buildItems(actor, settings);
 
@@ -49,13 +50,22 @@ export function buildInventoryContext(actor) {
   const visibleStandardCoinCount = currencies
     .filter(currency => !currency.isCustom)
     .reduce((sum, currency) => sum + currency.value, 0);
+  const customCurrencyWeight = currencies
+    .filter(currency => currency.isCustom)
+    .reduce((sum, currency) => {
+      const weightPerUnit = Number(currency.weightPerUnit) || 0;
+      return sum + currency.value * weightPerUnit;
+    }, 0);
   const currencyWeight = settings.applyCurrencyWeight
-    ? visibleStandardCoinCount / COINS_PER_POUND
+    ? (visibleStandardCoinCount / COINS_PER_POUND) + customCurrencyWeight
     : 0;
   const totalWeight = raw.itemWeight + currencyWeight;
 
   const gpEquivalent = currencies.reduce((sum, currency) => {
     return sum + (currency.gpRate == null ? 0 : currency.value * currency.gpRate);
+  }, 0);
+  const referenceEquivalent = currencies.reduce((sum, currency) => {
+    return sum + (currency.referenceRate == null ? 0 : currency.value * currency.referenceRate);
   }, 0);
 
   // Capacity state
@@ -84,6 +94,9 @@ export function buildInventoryContext(actor) {
       currencyWeight: round2(currencyWeight),
       totalWeight: round2(totalWeight),
       gpEquivalent: round2(gpEquivalent),
+      referenceEquivalent: round2(referenceEquivalent),
+      referenceCurrencyName: referenceCurrency?.name ?? "Gold",
+      referenceCurrencySymbol: referenceCurrency?.symbol ?? "GP",
       applyCurrencyWeight: settings.applyCurrencyWeight
     },
     capacity,

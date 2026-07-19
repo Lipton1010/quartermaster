@@ -112,6 +112,7 @@ import * as Resources from "./resources.js";
 import * as HiddenItems from "./hidden-items.js";
 import * as HiddenCurrency from "./hidden-currency.js";
 import * as LootPrepFolders from "./loot-prep-folders.js";
+import * as LootPrepNotes from "./loot-prep-notes.js";
 import * as ContextMenu from "./context-menu.js";
 import { registerCompendiumContextMenu } from "./compendium-menu.js";
 import * as InventoryToken from "./inventory-token.js";
@@ -183,6 +184,7 @@ Hooks.once("ready", async () => {
       hiddenItems: HiddenItems,
       hiddenCurrency: HiddenCurrency,
       lootPrepFolders: LootPrepFolders,
+      lootPrepNotes: LootPrepNotes,
       contextMenu: ContextMenu,
       inventoryToken: InventoryToken,
       currencies: Currencies,

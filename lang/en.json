@@ -19,15 +19,15 @@
       },
       "applyCurrencyWeight": {
         "name": "Currency Counts Toward Weight",
-        "hint": "When enabled, currency weight is included in the capacity total (50 coins per pound, dnd5e standard). Off by default."
+        "hint": "When enabled, currency weight is included in the capacity total. Built-in currencies use the dnd5e standard of 50 coins per pound; custom currencies use their optional per-unit weight. Off by default."
       },
       "currencyApprovalMode": {
         "name": "Currency Approval Mode",
         "hint": "Controls whether GM approval is required when players change shared currency values."
       },
       "currencyApprovalThreshold": {
-        "name": "Approval Threshold (gp)",
-        "hint": "When mode is 'Threshold', changes equal to or above this gp value require GM approval. Other currencies are converted to gp for comparison."
+        "name": "Approval Threshold (Reference Currency)",
+        "hint": "When mode is 'Threshold', changes equal to or above this value require GM approval. Currency changes are converted into the reference currency selected in Manage Currencies."
       },
       "useApprovalTimeout": {
         "name": "Use Approval Timeout",

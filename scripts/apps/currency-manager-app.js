@@ -5,13 +5,14 @@
 import { MODULE_ID, MODULE_TITLE } from "../constants.js";
 import { getBackingActor } from "../backing-actor.js";
 import {
-  STANDARD_CURRENCIES,
   DEFAULT_CURRENCY_IMAGE,
   getCurrencies,
   getCurrency,
+  getReferenceCurrency,
   createCustomCurrency,
   updateCurrency,
   setCurrencyHidden,
+  setReferenceCurrency,
   deleteCustomCurrency
 } from "../currencies.js";
 
@@ -46,22 +47,52 @@ export class CurrencyManagerApp extends HandlebarsApplicationMixin(ApplicationV2
 
   async _prepareContext() {
     const actor = getBackingActor();
-    const currencies = getCurrencies(actor, { includeHidden: true }).map(currency => ({
+    const allCurrencies = getCurrencies(actor, { includeHidden: true });
+    const referenceCurrency = getReferenceCurrency(actor);
+    const currencies = allCurrencies.map(currency => ({
       ...currency,
       kindLabel: currency.isCustom ? "Custom" : "Built-in",
       visibilityLabel: currency.hidden ? "Hidden" : "Shown",
       visibilityIcon: currency.hidden ? "fa-solid fa-eye" : "fa-solid fa-eye-slash",
       visibilityActionLabel: currency.hidden ? "Show" : "Hide",
-      conversionLabel: currency.isCustom
-        ? formatConversion(currency)
-        : `1 ${currency.symbol} = ${currency.gpRate} GP`
+      conversionLabel: formatConversion(currency, referenceCurrency),
+      weightLabel: currency.isCustom
+        ? currency.weightPerUnit > 0 ? `${currency.weightPerUnit} lb each` : "Weightless"
+        : "50 coins per lb",
+      canHide: !currency.isReference,
+      canDelete: currency.isCustom && !currency.isReference
     }));
 
     return {
       backingActorPresent: Boolean(actor),
       currencies,
-      hasCurrencies: currencies.length > 0
+      hasCurrencies: currencies.length > 0,
+      referenceCurrency,
+      referenceOptions: allCurrencies.map(currency => ({
+        ...currency,
+        canBeReference: currency.referenceRate != null
+      }))
     };
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    const select = this.element?.querySelector(".qm-reference-currency-select");
+    select?.addEventListener("change", async () => {
+      select.disabled = true;
+      const result = await setReferenceCurrency(select.value);
+      if (result.status === "success") {
+        const thresholdMessage = result.approvalThreshold == null
+          ? ""
+          : ` Approval threshold: ${result.approvalThreshold} ${result.currency.symbol}.`;
+        ui.notifications.info(
+          `${result.currency.name} is now the reference currency.${thresholdMessage}`
+        );
+      } else {
+        notifyFailure(result);
+      }
+      this.render();
+    });
   }
 
   static async onAddCurrency() {
@@ -138,6 +169,8 @@ async function promptCurrencyEdit(currencyId = null) {
 
   const isEdit = Boolean(currency);
   const isStandard = Boolean(currency && !currency.isCustom);
+  const referenceCurrency = getReferenceCurrency();
+  const isReference = Boolean(currency?.isReference);
   const title = isStandard
     ? `Edit ${currency.name}`
     : isEdit ? `Edit Currency: ${currency.name}` : "Add Custom Currency";
@@ -146,16 +179,9 @@ async function promptCurrencyEdit(currencyId = null) {
     symbol: "",
     image: "",
     value: 0,
-    conversionDenomination: null,
-    conversionRate: null
+    referenceRate: null,
+    weightPerUnit: 0
   };
-
-  const conversionOptions = [
-    ["", "No conversion"],
-    ...Object.values(STANDARD_CURRENCIES).map(entry => [entry.id, `${entry.name} (${entry.symbol})`])
-  ].map(([value, label]) =>
-    `<option value="${value}"${initial.conversionDenomination === value ? " selected" : ""}>${label}</option>`
-  ).join("");
 
   const customFields = isStandard ? "" : `
     <div class="form-group">
@@ -174,21 +200,41 @@ async function promptCurrencyEdit(currencyId = null) {
       <input type="number" id="qm-cur-value" name="value" value="${initial.value}"
              min="0" step="any" />
     </div>
+    <div class="form-group">
+      <label for="qm-cur-weight">Weight per Unit (lb)</label>
+      <input type="number" id="qm-cur-weight" name="weightPerUnit" value="${initial.weightPerUnit ?? 0}"
+             min="0" step="any" placeholder="0" />
+      <p class="hint">Optional. Use 0 for weightless. Applied only when Currency Counts Toward Weight is enabled.</p>
+    </div>
+  `;
+
+  const conversionFields = isReference ? `
     <fieldset class="qm-conversion-fields">
-      <legend>Optional Conversion</legend>
+      <legend>Reference Conversion</legend>
+      <div class="qm-conversion-row">
+        <span>1 ${escapeHtml(initial.symbol)} = 1 ${escapeHtml(initial.symbol)}</span>
+      </div>
+      <p class="hint">The selected reference currency is fixed at 1. Choose another reference in Manage Currencies to edit this rate.</p>
+    </fieldset>
+  ` : `
+    <fieldset class="qm-conversion-fields">
+      <legend>${isStandard ? "Reference Conversion" : "Optional Reference Conversion"}</legend>
       <div class="qm-conversion-row">
         <span>1 ${escapeHtml(initial.symbol || "custom unit")} equals</span>
-        <input type="number" name="conversionRate" value="${initial.conversionRate ?? ""}"
-               min="0.000001" step="any" placeholder="Rate" />
-        <select name="conversionDenomination">${conversionOptions}</select>
+        <input type="number" name="referenceRate" value="${initial.referenceRate ?? ""}"
+               min="0.000000000001" step="any" placeholder="${isStandard ? "Rate" : "No conversion"}" />
+        <strong>${escapeHtml(referenceCurrency?.symbol ?? "GP")}</strong>
       </div>
-      <p class="hint">Choose No conversion to exclude this currency from GP totals and threshold calculations.</p>
+      <p class="hint">${isStandard
+        ? `Enter this currency's value in ${escapeHtml(referenceCurrency?.name ?? "Gold")}.`
+        : `Leave blank to exclude this currency from equivalent totals and approval-threshold calculations.`}</p>
     </fieldset>
   `;
 
   const content = `
     <form class="qm-currency-edit" autocomplete="off">
       ${customFields}
+      ${conversionFields}
       <div class="form-group">
         <label for="qm-cur-image">Tile Background Image</label>
         <div class="qm-currency-image-control">
@@ -228,7 +274,7 @@ async function promptCurrencyEdit(currencyId = null) {
           default: true,
           callback: async (event, button, dlg) => {
             const root = dlg.element;
-            const data = readCurrencyForm(root, initial, isStandard);
+            const data = readCurrencyForm(root, initial, isStandard, isReference);
             if (!data) throw new Error("validation-failed");
             const result = isEdit
               ? await updateCurrency(currency.id, data)
@@ -257,16 +303,27 @@ async function promptCurrencyEdit(currencyId = null) {
   });
 }
 
-function readCurrencyForm(root, initial, isStandard) {
+function readCurrencyForm(root, initial, isStandard, isReference) {
   const image = root.querySelector("[name='image']")?.value?.trim() ?? "";
-  if (isStandard) return { image };
+  const rateRaw = root.querySelector("[name='referenceRate']")?.value ?? "";
+  const referenceRate = isReference ? 1 : rateRaw === "" ? null : Number(rateRaw);
+
+  if (!isReference && isStandard && (!Number.isFinite(referenceRate) || referenceRate <= 0)) {
+    ui.notifications.warn(`${MODULE_TITLE}: built-in currencies require a positive conversion rate.`);
+    return null;
+  }
+  if (!isReference && !isStandard && referenceRate != null
+      && (!Number.isFinite(referenceRate) || referenceRate <= 0)) {
+    ui.notifications.warn(`${MODULE_TITLE}: enter a positive conversion rate or leave it blank.`);
+    return null;
+  }
+  if (isStandard) return { image, referenceRate };
 
   const name = root.querySelector("[name='name']")?.value?.trim() ?? "";
   const symbol = root.querySelector("[name='symbol']")?.value?.trim() ?? "";
   const value = Number(root.querySelector("[name='value']")?.value ?? 0);
-  const denomination = root.querySelector("[name='conversionDenomination']")?.value ?? "";
-  const rateRaw = root.querySelector("[name='conversionRate']")?.value ?? "";
-  const rate = rateRaw === "" ? null : Number(rateRaw);
+  const weightRaw = root.querySelector("[name='weightPerUnit']")?.value ?? "";
+  const weightPerUnit = weightRaw === "" ? 0 : Number(weightRaw);
 
   if (!name || !symbol) {
     ui.notifications.warn(`${MODULE_TITLE}: currency name and short label are required.`);
@@ -276,19 +333,18 @@ function readCurrencyForm(root, initial, isStandard) {
     ui.notifications.warn(`${MODULE_TITLE}: balance must be zero or greater.`);
     return null;
   }
-  if (denomination && (!Number.isFinite(rate) || rate <= 0)) {
-    ui.notifications.warn(`${MODULE_TITLE}: enter a positive conversion rate or choose No conversion.`);
+  if (!Number.isFinite(weightPerUnit) || weightPerUnit < 0) {
+    ui.notifications.warn(`${MODULE_TITLE}: weight per unit must be zero or greater.`);
     return null;
   }
-
   return {
     name,
     symbol,
     image,
     value,
     hidden: initial.hidden ?? false,
-    conversionDenomination: denomination || null,
-    conversionRate: denomination ? rate : null
+    referenceRate,
+    weightPerUnit
   };
 }
 
@@ -319,6 +375,9 @@ function notifyFailure(result) {
   const messages = {
     "duplicate-symbol": "That short label is already used by another custom currency.",
     "currency-has-staged-loot": "Reveal or delete this currency's staged Loot Prep entries before deleting it.",
+    "currency-has-no-conversion": "Set a conversion rate for that currency before making it the reference.",
+    "reference-currency": "Choose a different reference currency before hiding or deleting this one.",
+    "invalid-conversion-rate": "Enter a positive conversion rate.",
     "currency-not-found": "Currency not found.",
     "standard-currency": "Built-in currencies cannot be deleted.",
     "name-required": "Currency name is required.",
@@ -327,10 +386,10 @@ function notifyFailure(result) {
   ui.notifications.warn(`${MODULE_TITLE}: ${messages[result?.error] ?? result?.error ?? "currency update failed"}`);
 }
 
-function formatConversion(currency) {
-  if (!currency.conversionDenomination || !currency.conversionRate) return "No conversion";
-  const target = STANDARD_CURRENCIES[currency.conversionDenomination];
-  return `1 ${currency.symbol} = ${currency.conversionRate} ${target?.symbol ?? currency.conversionDenomination.toUpperCase()}`;
+function formatConversion(currency, referenceCurrency) {
+  if (currency.isReference) return `Reference: 1 ${currency.symbol} = 1 ${currency.symbol}`;
+  if (currency.referenceRate == null) return "No conversion";
+  return `1 ${currency.symbol} = ${currency.referenceRate} ${referenceCurrency?.symbol ?? "GP"}`;
 }
 
 function escapeHtml(value) {

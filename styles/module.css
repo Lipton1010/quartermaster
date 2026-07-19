@@ -1154,6 +1154,7 @@ body.qm-dragging {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
   padding-bottom: 4px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
@@ -1335,6 +1336,10 @@ body.qm-dragging {
   display: flex;
   gap: 6px;
   align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 480px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .quartermaster-loot-prep-root .qm-prep-secondary {
@@ -1369,6 +1374,19 @@ body.qm-dragging {
   color: #d4aa30;
   border: 1px solid rgba(200, 160, 50, 0.4);
   vertical-align: middle;
+}
+
+.quartermaster-loot-prep-root .qm-loot-notes-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+  font-size: 0.76em;
+  opacity: 0.65;
+}
+
+.quartermaster-loot-prep-root .qm-loot-notes-hint i {
+  color: #c8a032;
 }
 
 /* Item list */
@@ -1431,6 +1449,47 @@ body.qm-dragging {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.quartermaster-loot-prep-root .qm-loot-note {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  gap: 4px;
+  margin-top: 3px;
+  padding: 3px 5px;
+  border-left: 2px solid rgba(200, 160, 50, 0.55);
+  border-radius: 2px;
+  background: rgba(200, 160, 50, 0.08);
+  font-size: 0.72em;
+  line-height: 1.25;
+}
+
+.quartermaster-loot-prep-root .qm-loot-note > i {
+  margin-top: 1px;
+  color: #c8a032;
+}
+
+.quartermaster-loot-prep-root .qm-loot-note-source {
+  padding: 0 4px;
+  border: 1px solid rgba(200, 160, 50, 0.25);
+  border-radius: 3px;
+  opacity: 0.72;
+  text-transform: uppercase;
+  font-size: 0.86em;
+}
+
+.quartermaster-loot-prep-root .qm-loot-note[data-note-source="item"] {
+  border-left-color: rgba(96, 168, 96, 0.7);
+}
+
+.quartermaster-loot-prep-root .qm-loot-note[data-note-source="item"] > i {
+  color: #60a860;
+}
+
+.quartermaster-loot-prep-root .qm-loot-note-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .quartermaster-loot-prep-root .qm-hidden-item-meta {
@@ -1680,6 +1739,39 @@ body.qm-dragging {
   padding: 6px 10px;
 }
 
+.quartermaster .qm-reference-currency-control {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  padding: 10px;
+  border: 1px solid rgba(200, 160, 50, 0.28);
+  border-radius: 5px;
+  background: rgba(200, 160, 50, 0.07);
+}
+
+.quartermaster .qm-reference-currency-control label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.quartermaster .qm-reference-currency-control label i {
+  color: #c8a032;
+}
+
+.quartermaster .qm-reference-currency-control select {
+  min-width: 0;
+}
+
+.quartermaster .qm-reference-currency-control p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-text-secondary, #b9b2aa);
+  font-size: 0.78em;
+}
+
 .quartermaster .qm-currency-manager-list {
   min-height: 0;
   overflow-y: auto;
@@ -1754,6 +1846,11 @@ body.qm-dragging {
   padding: 0;
 }
 
+.quartermaster .qm-currency-manager-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
 .quartermaster .qm-currency-manager-actions .qm-currency-delete {
   color: #e05d5d;
 }
@@ -1804,6 +1901,14 @@ body.qm-dragging {
   .quartermaster .qm-currency-manager-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .quartermaster .qm-reference-currency-control {
+    grid-template-columns: 1fr;
+  }
+
+  .quartermaster .qm-reference-currency-control p {
+    grid-column: 1;
   }
 
   .quartermaster .qm-currency-manager-row {
@@ -1936,6 +2041,7 @@ body.qm-dragging {
   background: rgba(200, 160, 50, 0.08);
   font-weight: 600;
   font-size: 0.85em;
+  cursor: context-menu;
 }
 
 .quartermaster-loot-prep-root .qm-folder-header i {
@@ -1951,6 +2057,31 @@ body.qm-dragging {
   opacity: 0.5;
   font-weight: 400;
   font-size: 0.9em;
+}
+
+.quartermaster-loot-prep-root .qm-folder-note-indicator {
+  color: #60a860 !important;
+  opacity: 0.9 !important;
+}
+
+.quartermaster-loot-prep-root .qm-folder-note-indicator i {
+  color: #60a860 !important;
+  opacity: 1 !important;
+}
+
+.quartermaster-loot-prep-root .qm-folder-note-indicator:hover {
+  background: rgba(96, 168, 96, 0.18) !important;
+  border-color: rgba(96, 168, 96, 0.5) !important;
+}
+
+.qm-loot-note-form .qm-loot-note-dialog-row {
+  align-items: flex-start;
+}
+
+.qm-loot-note-form textarea[name="lootPrepNote"] {
+  flex: 1;
+  min-height: 110px;
+  resize: vertical;
 }
 
 .quartermaster-loot-prep-root .qm-folder-actions {

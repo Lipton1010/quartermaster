@@ -468,8 +468,10 @@ export async function realCurrencyChange(data, context) {
 
   // Approval gate (step 13). Runs on the GM-side, before any mutation.
   // GMs auto-approve their own requests; players hit the configured policy.
-  const gpValue = currency.gpRate == null ? 0 : Math.abs(delta * currency.gpRate);
-  if (needsApproval({ userId, delta, gpValue })) {
+  const referenceValue = currency.referenceRate == null
+    ? 0
+    : Math.abs(delta * currency.referenceRate);
+  if (needsApproval({ userId, delta, referenceValue })) {
     const decision = await promptCurrencyApproval({
       requestId,
       userId,
