@@ -52,7 +52,22 @@ Quartermaster is available directly through the Foundry VTT package browser.
 
 ### Manual Installation
 If you need to install a specific build or are testing a pre-release version, paste this manifest URL into Foundry's "Install Module" dialog:
-`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.7/module.json`
+`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.8/module.json`
+
+## Macro integration
+
+You can open the Shared Party Inventory from a Foundry macro or a landing-page trigger:
+
+1. Create a new macro and set its type to **Script**.
+2. Paste the following code:
+
+```js
+await game.modules.get("quartermaster").api.ui.openInventory();
+```
+
+3. Run that macro directly, place it on the macro hotbar, or configure another module's trigger to execute it.
+
+The macro works for both players and GMs while Quartermaster is active.
 
 ## Compatibility
 
@@ -62,7 +77,7 @@ If you need to install a specific build or are testing a pre-release version, pa
 
 ## Status
 
-**v0.1.7 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
+**v0.1.8 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
 
 ## License
 

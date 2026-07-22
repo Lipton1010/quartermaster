@@ -2168,9 +2168,7 @@ body.qm-dragging {
    ================================================================ */
 
 .dialog .qm-pref-select,
-.dialog .qm-pref-select option,
-.window-app select,
-.window-app select option {
+.dialog .qm-pref-select option {
   background: var(--color-bg-option, #1a1a2e) !important;
   color: var(--color-text-primary, #e0ddd4) !important;
 }

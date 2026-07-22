@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to Quartermaster will be documented in this file.
 
@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
+
+
+## [0.1.8] - 2026-07-22
+
+### Added
+- Document the public macro command for opening the Shared Party Inventory from landing pages, hotbars, and other triggers.
+
+### Fixed
+- Scope dialog dropdown colors to Quartermaster preference selects so other modules, including Item Piles, retain their own select styling.
 
 
 ## [0.1.7] - 2026-07-18
@@ -340,4 +349,3 @@ Initial public release. Core feature set complete through build step 18.
 [0.1.2]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.0
-
