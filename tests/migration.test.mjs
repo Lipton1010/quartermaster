@@ -14,6 +14,7 @@ class FakeItem {
     this.id = data._id ?? data.id;
     this.name = data.name;
     this.type = data.type;
+    this.system = structuredClone(data.system ?? {});
     this.flags = structuredClone(data.flags ?? {});
     this.parent = parent;
     this.uuid = `${parent.uuid}.Item.${this.id}`;
@@ -24,7 +25,13 @@ class FakeItem {
     return this;
   }
   toObject() {
-    return { _id: this.id, name: this.name, type: this.type, flags: structuredClone(this.flags) };
+    return {
+      _id: this.id,
+      name: this.name,
+      type: this.type,
+      system: structuredClone(this.system),
+      flags: structuredClone(this.flags)
+    };
   }
 }
 
@@ -127,6 +134,83 @@ test("only the elected GM migrates and a waiting GM can continue after election"
   const elected = await migrateStorageSchema(shared, staging);
   assert.equal(elected.migrated, true);
   assert.equal(shared.getFlag(MODULE_ID, FLAGS.STORAGE_SCHEMA_VERSION), STORAGE_SCHEMA_VERSION);
+});
+
+test("a benign Set-field duplicate introduced by document creation does not fail item verification", async () => {
+  // Reproduces a live Foundry v14.365/dnd5e 5.3.3 defect: recreating an Item via
+  // createEmbeddedDocuments can round-trip a Set-backed system field (e.g. a
+  // "properties" tag set) with a duplicate entry. That is not data loss —
+  // verifyMigratedItem must tolerate it instead of failing migration.
+  class DuplicatingActor extends FakeActor {
+    async createEmbeddedDocuments(type, data) {
+      const mutated = data.map(entry => ({
+        ...entry,
+        system: {
+          ...entry.system,
+          properties: [...(entry.system?.properties ?? []), ...(entry.system?.properties ?? [])]
+        }
+      }));
+      return super.createEmbeddedDocuments(type, mutated);
+    }
+  }
+
+  const shared = new FakeActor("shared", {
+    flags: { [MODULE_ID]: {
+      [FLAGS.HIDDEN_CURRENCY]: [],
+      [FLAGS.LOOT_PREP_FOLDERS]: [],
+      [FLAGS.TRANSACTION_LOG]: []
+    } },
+    items: [{
+      _id: "ring",
+      name: "Ring",
+      type: "loot",
+      system: { properties: ["gear"] },
+      flags: { [MODULE_ID]: { [FLAGS.HIDDEN]: true } }
+    }]
+  });
+  const staging = new DuplicatingActor("private");
+
+  const result = await migrateStorageSchema(shared, staging);
+  assert.equal(result.migrated, true);
+  assert.equal(shared.items.length, 0);
+  assert.equal(staging.items.length, 1);
+  assert.deepEqual(staging.items[0].system.properties, ["gear", "gear"]);
+});
+
+test("a genuinely different system field still fails item verification", async () => {
+  class CorruptingActor extends FakeActor {
+    async createEmbeddedDocuments(type, data) {
+      const mutated = data.map(entry => ({
+        ...entry,
+        system: { ...entry.system, properties: ["magic"] }
+      }));
+      return super.createEmbeddedDocuments(type, mutated);
+    }
+  }
+
+  const shared = new FakeActor("shared", {
+    flags: { [MODULE_ID]: {
+      [FLAGS.HIDDEN_CURRENCY]: [],
+      [FLAGS.LOOT_PREP_FOLDERS]: [],
+      [FLAGS.TRANSACTION_LOG]: []
+    } },
+    items: [{
+      _id: "ring",
+      name: "Ring",
+      type: "loot",
+      system: { properties: ["gear"] },
+      flags: { [MODULE_ID]: { [FLAGS.HIDDEN]: true } }
+    }]
+  });
+  const staging = new CorruptingActor("private");
+  const previousError = console.error;
+  console.error = () => {};
+
+  await assert.rejects(
+    () => migrateStorageSchema(shared, staging),
+    /hidden-item-verification-failed-ring/
+  );
+  console.error = previousError;
 });
 
 test("schema migration moves private state, verifies it, and is idempotent", async () => {

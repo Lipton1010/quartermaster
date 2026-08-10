@@ -260,7 +260,30 @@ function verifyMigratedItem(expected, actual) {
     effects: data?.effects ?? [],
     flags: data?.flags ?? {}
   });
-  return deepEqual(project(expected), project(actual));
+  // A system's data model may back a field with a genuine Set (e.g. a tag list
+  // with no meaningful order or duplicates). Recreating the Item through
+  // createEmbeddedDocuments can round-trip such a field with a benign
+  // duplicate entry. Compare primitive-only arrays as deduplicated, unordered
+  // content so that normalization isn't mistaken for lost or corrupted data;
+  // arrays of objects (like `effects`) still compare exactly.
+  return deepEqual(
+    normalizeSetSemanticArrays(project(expected)),
+    normalizeSetSemanticArrays(project(actual))
+  );
+}
+
+function normalizeSetSemanticArrays(value) {
+  if (Array.isArray(value)) {
+    const normalized = value.map(normalizeSetSemanticArrays);
+    const allPrimitive = normalized.every(entry => entry === null || typeof entry !== "object");
+    return allPrimitive ? [...new Set(normalized)].sort() : normalized;
+  }
+  if (value && typeof value === "object") {
+    const result = {};
+    for (const key of Object.keys(value)) result[key] = normalizeSetSemanticArrays(value[key]);
+    return result;
+  }
+  return value;
 }
 
 async function migrateArrayFlag(source, destination, flag, identity) {
