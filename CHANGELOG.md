@@ -46,9 +46,23 @@ _(Merge, installation, tagging, and publication remain gated on review of the mi
 - Introduce integer storage schema version 1 and currency-config version 3.
 - Copy and verify legacy private data before deleting legacy values, and advance the schema marker only after complete success.
 - Preserve legacy D&D native and custom balances, rates, approval settings, resources, visible Items, notes, folders, logs, settings, and shortcut-token data.
+- Scrub `lootPrepNote`/`lootPrepFolder` flags left on already-visible v0.1.8 Items instead of leaving GM notes readable by players; `verifyPrivateStorageCleared` now asserts this.
+- Detect a migrated hidden-currency amount that is fractional for a native currency whose adapter requires whole units, record it on the migration state, and warn the GM instead of leaving it silently unrevealable.
+
+### Fixed
+- Register the storage-Actor deletion guard and Actors-directory suppression at module scope instead of inside the ready-gated runtime hooks, so an unelected GM (or one whose storage failed to initialize) can no longer see or delete either storage Actor.
+- Make a failed staged-currency reveal retryable instead of permanently reusing a stale request id that could hit `request-too-old` or replay a terminal failure forever.
+- Run the currency-approval prompt under its own lock instead of the shared `currency-ledger` lock, so an unanswered approval dialog can no longer stall every currency mutation and staged-currency reveal world-wide.
+- Reject fractional `addHiddenCurrency` amounts for native currencies whose adapter requires whole units (PF2e).
+- Serialize hidden-Item move/delete/stage operations under the storage ledger lock and disable the Loot Prep reveal control while a request is in flight, closing a double-click duplication path.
+- Derive `release.yml`'s version, compatibility minimum, and compatibility-verified values from `module.json` instead of hardcoding them, and move the actual Foundry publish step into a separate, manually authorized `publish-foundry.yml` workflow.
+- Exclude `docs/` from the packaged archive via `.gitattributes`.
+- Broaden `validate-release.mjs`'s system-coupling check to catch a hardcoded `"loot"` Item-type default outside `scripts/system-adapters` (previously missed).
+- Keep `api.ui.openInventory()` and friends available to a GM who is not the active storage GM, per the documented macro surface.
+- Key GM-only inventory and Loot Prep controls off the active storage-GM election instead of raw `user.isGM`, so a non-active GM no longer sees clickable no-op controls.
 
 ### Verification
-- On 2026-08-10, the committed candidate passed syntax checks for 79 JavaScript files, all 78/78 headless tests, and the release/system-boundary validator. Its validated package contained 70 clean entries and emitted a manifest, SHA-256 checksum, and complete file list.
+- On 2026-08-10, the committed candidate (`6237480bca9ba9d69116216d30da731dbce604ec`) passed syntax checks for 79 JavaScript files, all 86/86 headless tests, and the release/system-boundary validator. Its validated package contained 67 clean entries (SHA-256 `5e7f0b7eca6dfe9e63a272c669d02c964615107a6f12f6d3c40e8ffec384c76e`) and emitted a manifest, checksum file, and complete file list.
 - An isolated Foundry v14.365 / D&D 5e 5.3.3 smoke session verified fresh schema-1 storage creation, D&D load and native GP behavior, linked and synthetic Token Actor transfers, storage privacy, private hide/reveal, hostile boundary rejection without mutation, and pre-restart client reload behavior.
 - The process-level restart loaded the isolated world databases to `Complete`, but browser safety policy prevented a post-restart client reconnection. This is partial evidence only, not a completed matrix cell or proof of module client recovery after restart.
 - The other five live compatibility cells and the live v0.1.8 migration rehearsal remain pending and unprovisioned. See the [release gate](docs/RELEASE-GATE.md) and [migration report](docs/MIGRATION-REPORT.md).

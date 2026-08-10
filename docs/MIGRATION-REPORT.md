@@ -13,15 +13,15 @@ The v1 migration separates player-readable shared storage from GM-only staging s
 The review must cover migration from the published v0.1.8 data shape to storage schema 1, including:
 
 - hidden Items and their folder and note flags;
+- loot-prep notes and folder assignments left on already-visible Items;
 - staged currency and loot-prep folders;
 - canonical and player-readable transaction-log projections;
-- recovery data;
 - visible Items, native and custom balances, exchange configuration, approval settings, resources, user/world settings, and shortcut-token links that should remain available;
 - safe restart after an interrupted or failed migration.
 
 ## Automated evidence available
 
-On 2026-08-10, the committed candidate completed `npm test` with syntax checks for 79 JavaScript files, all 78/78 tests passing, and the release/system-boundary validator passing. The migration coverage demonstrated successful copy-and-verify behavior, idempotent reruns, staging-marker repair, and recovery after a simulated deletion failure without advancing the shared schema marker prematurely.
+On 2026-08-10, the committed candidate (`6237480bca9ba9d69116216d30da731dbce604ec`) completed `npm test` with syntax checks for 79 JavaScript files, all 86/86 tests passing, and the release/system-boundary validator passing. The migration coverage demonstrated successful copy-and-verify behavior, idempotent reruns, staging-marker repair, scrubbing of loot-prep notes/folders left on already-visible legacy Items, detection of migrated fractional hidden-currency amounts that a whole-units-only native currency cannot reveal, and recovery after a simulated deletion failure without advancing the shared schema marker prematurely.
 
 That run was headless and used synthetic Actor and Item doubles. It is exact-commit regression evidence accompanied by a validated package, but it is not a live Foundry migration result.
 

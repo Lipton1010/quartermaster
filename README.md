@@ -55,7 +55,7 @@ That URL is not release evidence and may not exist until publication. Do not use
 
 ## Migration and privacy
 
-On first GM startup, v1 creates a player-readable shared vault and a separate GM-only staging Actor. Legacy hidden Items, staged currency, folders, notes, canonical logs, and recovery data are copied to private storage, verified, and only then removed from their legacy location. A schema marker advances only after the complete migration succeeds, so an interrupted migration can be run again safely.
+On first GM startup, v1 creates a player-readable shared vault and a separate GM-only staging Actor. Legacy hidden Items, staged currency, folders, notes, and canonical logs are copied to private storage, verified, and only then removed from their legacy location. A schema marker advances only after the complete migration succeeds, so an interrupted migration can be run again safely. Recovery records are a new v1 concept written when a v1 transfer needs one; v0.1.8 has no recovery data to migrate.
 
 Visible Items, balances, resources, redacted log entries, settings, and shortcut-token links remain available to players as before. Disabling Quartermaster does not delete either storage Actor.
 
