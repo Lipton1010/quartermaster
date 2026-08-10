@@ -47,7 +47,7 @@
         <div class="qm-currency-manager-meta">
           <span>{{this.value}} {{this.symbol}}</span>
           <span>{{this.conversionLabel}}</span>
-          <span>{{this.weightLabel}}</span>
+          {{#if this.hasWeightLabel}}<span>{{this.weightLabel}}</span>{{/if}}
           <span>{{this.visibilityLabel}}</span>
         </div>
       </div>

@@ -21,8 +21,14 @@
 import { MODULE_ID, MODULE_TITLE, FLAGS } from "./constants.js";
 import { getBackingActor } from "./backing-actor.js";
 import { setItemHidden } from "./hidden-items.js";
+import { isActiveStorageGM, requireActiveStorageGM } from "./storage-ledger.js";
 import { writeEntry } from "./transaction-log.js";
 import { transferInventoryItemToActor } from "./drag-drop.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
+import {
+  actorOwnedBy,
+  isQuartermasterStorageActor
+} from "./transfer-authorization.js";
 
 // ============================================================
 // Internal state
@@ -76,7 +82,7 @@ function openContextMenu(event, row, app) {
 
   const menu = document.createElement("div");
   menu.className = "quartermaster qm-context-menu";
-  const gmActions = game.user.isGM ? `
+  const gmActions = isActiveStorageGM() ? `
       <li class="qm-context-menu-item" data-action="hide-item" data-item-id="${escapeHtml(itemId)}">
         <i class="fa-solid fa-eye-slash"></i>
         Hide (send to Loot Prep)
@@ -86,7 +92,7 @@ function openContextMenu(event, row, app) {
         Delete Item
       </li>
   ` : "";
-  const addLabel = game.user.isGM ? "Add to Character..." : "Add to Character";
+  const addLabel = "Add to Actor...";
   menu.innerHTML = `
     <ul class="qm-context-menu-list">
       <li class="qm-context-menu-item" data-action="add-to-character" data-item-id="${escapeHtml(itemId)}" data-item-name="${escapeHtml(itemName)}">
@@ -151,6 +157,7 @@ function closeContextMenu() {
 // ============================================================
 
 export async function handleInventoryGMAction(action, itemId, itemName, app) {
+  if (!isActiveStorageGM()) return;
   return handleContextAction(action, itemId, itemName, app);
 }
 
@@ -175,118 +182,67 @@ function getAssignedCharacter() {
 }
 
 function getSelectableCharacters() {
-  const backingActor = getBackingActor();
-  const allCharacters = game.actors.filter(actor =>
-    actor.type === "character"
-    && actor.id !== backingActor?.id
-  );
-  const characterNameSet = new Set(allCharacters.map(actor => normalizeActorName(actor.name)));
+  const adapter = getActiveSystemAdapter();
+  const assigned = getAssignedCharacter();
   const selected = [];
   const seen = new Set();
 
-  for (const actor of getUserAssignedCharacters()) {
-    addSelectableCharacter(actor, selected, seen, backingActor, characterNameSet);
-  }
-
-  for (const actor of allCharacters) {
-    if (!hasPlayerOwner(actor)) continue;
-    addSelectableCharacter(actor, selected, seen, backingActor, characterNameSet);
-  }
-
-  // Keep GM-only worlds usable even when no player ownership is configured.
-  if (selected.length === 0) {
-    for (const actor of allCharacters) {
-      addSelectableCharacter(actor, selected, seen, backingActor, characterNameSet);
+  const addActor = (actor) => {
+    if (!actor || actor.documentName !== "Actor") return;
+    if (isQuartermasterStorageActor(actor)) return;
+    if (!game.user.isGM && !actorOwnedBy(actor, game.user)) return;
+    try {
+      if (typeof adapter?.isCompatibleActor === "function"
+          && !adapter.isCompatibleActor(actor, { role: "recipient" })) return;
+    } catch {
+      return;
     }
+    const key = actor.uuid ?? `Actor.${actor.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    selected.push(actor);
+  };
+
+  // Assigned Actor is the preferred/default choice when it is eligible.
+  addActor(assigned);
+
+  for (const actor of game.actors ?? []) addActor(actor);
+  for (const token of globalThis.canvas?.tokens?.placeables ?? []) {
+    addActor(token.actor);
   }
 
-  return selected.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-}
-
-function getUserAssignedCharacters() {
-  const characters = [];
-  for (const user of game.users ?? []) {
-    const actor = resolveUserCharacter(user);
-    if (actor) characters.push(actor);
-  }
-  return characters;
-}
-
-function resolveUserCharacter(user) {
-  const character = user?.character;
-  if (character?.documentName === "Actor") return character;
-
-  const id = typeof character === "string"
-    ? character
-    : user?._source?.character ?? user?.characterId ?? null;
-  return id ? game.actors.get(id) ?? null : null;
-}
-
-function addSelectableCharacter(actor, selected, seen, backingActor, characterNameSet) {
-  if (!actor || actor.type !== "character" || actor.id === backingActor?.id) return;
-  if (seen.has(actor.id)) return;
-  if (isTemporaryFormActor(actor, characterNameSet)) return;
-
-  selected.push(actor);
-  seen.add(actor.id);
-}
-
-function hasPlayerOwner(actor) {
-  for (const user of game.users ?? []) {
-    if (!user || user.isGM) continue;
-    if (resolveUserCharacter(user)?.id === actor.id) return true;
-    if (actor.testUserPermission?.(user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER)) return true;
-  }
-  return false;
-}
-
-function isTemporaryFormActor(actor, characterNameSet) {
-  if (hasTemporaryFormFlag(actor.flags)) return true;
-
-  const name = actor.name ?? "";
-  const baseName = stripTrailingParentheticals(name);
-  return baseName !== name && characterNameSet.has(normalizeActorName(baseName));
-}
-
-function hasTemporaryFormFlag(value, depth = 0) {
-  if (!value || typeof value !== "object" || depth > 4) return false;
-
-  for (const [key, child] of Object.entries(value)) {
-    if (/wild[\s_-]?shape|wildform|polymorph|transform|original[\s_-]?actor/i.test(key)) {
-      return true;
-    }
-    if (hasTemporaryFormFlag(child, depth + 1)) return true;
-  }
-  return false;
-}
-
-function stripTrailingParentheticals(name) {
-  return String(name ?? "").replace(/(?:\s*\([^)]*\))+$/g, "").trim();
-}
-
-function normalizeActorName(name) {
-  return String(name ?? "").trim().toLocaleLowerCase();
+  const preferredUuid = assigned?.uuid;
+  return selected.sort((a, b) => {
+    if (a.uuid === preferredUuid) return -1;
+    if (b.uuid === preferredUuid) return 1;
+    return (a.name ?? "").localeCompare(b.name ?? "");
+  });
 }
 
 async function promptCharacterTarget(itemName) {
   const characters = getSelectableCharacters();
   if (characters.length === 0) {
-    ui.notifications.warn(`${MODULE_TITLE}: no player characters are available.`);
+    ui.notifications.warn(`${MODULE_TITLE}: no compatible owned actors are available.`);
     return null;
   }
 
+  const byUuid = new Map(characters.map(actor => [actor.uuid ?? `Actor.${actor.id}`, actor]));
   const options = characters
-    .map(actor => `<option value="${escapeHtml(actor.id)}">${escapeHtml(actor.name)}</option>`)
+    .map((actor, index) => {
+      const uuid = actor.uuid ?? `Actor.${actor.id}`;
+      const tokenSuffix = actor.isToken ? " (Token)" : "";
+      return `<option value="${escapeHtml(uuid)}"${index === 0 ? " selected" : ""}>${escapeHtml(actor.name)}${tokenSuffix}</option>`;
+    })
     .join("");
   const content = `
     <form class="qm-pref-form" autocomplete="off">
       <div class="qm-pref-row">
-        <label>Character</label>
+        <label>Actor</label>
         <select name="targetCharacter" class="qm-pref-select">
           ${options}
         </select>
       </div>
-      <p class="hint">Add <strong>${escapeHtml(itemName)}</strong> to the selected character.</p>
+      <p class="hint">Add <strong>${escapeHtml(itemName)}</strong> to the selected actor.</p>
     </form>
   `;
 
@@ -294,19 +250,19 @@ async function promptCharacterTarget(itemName) {
   return new Promise((resolve) => {
     let resolved = false;
     let closeHookId = null;
-    let selectedActorId = null;
+    let selectedActorUuid = null;
 
-    const finish = (actorId) => {
+    const finish = (actorUuid) => {
       if (resolved) return;
       resolved = true;
       if (closeHookId !== null) {
         try { Hooks.off("closeDialogV2", closeHookId); } catch {}
       }
-      resolve(actorId ? game.actors.get(actorId) ?? null : null);
+      resolve(actorUuid ? byUuid.get(actorUuid) ?? null : null);
     };
 
     const dialog = new DialogV2({
-      window: { title: "Add to Character", icon: "fa-solid fa-user-plus" },
+      window: { title: "Add to Actor", icon: "fa-solid fa-user-plus" },
       content,
       rejectClose: false,
       modal: true,
@@ -318,21 +274,21 @@ async function promptCharacterTarget(itemName) {
           default: true,
           callback: (event, btn, dlg) => {
             const root = dlg.element ?? dlg;
-            selectedActorId = root.querySelector("[name='targetCharacter']")?.value ?? null;
+            selectedActorUuid = root.querySelector("[name='targetCharacter']")?.value ?? null;
           }
         },
         {
           action: "cancel",
           label: "Cancel",
           icon: "fa-solid fa-xmark",
-          callback: () => { selectedActorId = null; }
+          callback: () => { selectedActorUuid = null; }
         }
       ]
     });
 
     closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
       if (closedApp !== dialog) return;
-      finish(selectedActorId);
+      finish(selectedActorUuid);
     });
 
     dialog.render({ force: true });
@@ -343,19 +299,15 @@ async function handleAddToCharacter(itemId, app) {
   const actor = getBackingActor();
   const item = actor?.items.get(itemId);
   const itemName = item?.name ?? "this item";
-  const character = game.user.isGM
-    ? await promptCharacterTarget(itemName)
-    : getAssignedCharacter();
+  const choices = getSelectableCharacters();
+  const character = choices.length === 1
+    ? choices[0]
+    : await promptCharacterTarget(itemName);
   if (!character) {
-    if (!game.user.isGM) {
-      ui.notifications.warn(`${MODULE_TITLE}: choose a player character before taking items.`);
-    }
     return;
   }
 
-  const canOwn = game.user.isGM
-    || character.isOwner
-    || character.testUserPermission?.(game.user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER);
+  const canOwn = actorOwnedBy(character, game.user);
   if (!canOwn) {
     ui.notifications.warn(`${MODULE_TITLE}: you do not own ${character.name}.`);
     return;
@@ -366,7 +318,7 @@ async function handleAddToCharacter(itemId, app) {
 }
 
 async function handleHideItem(itemId, app) {
-  if (!game.user.isGM) return;
+  if (!isActiveStorageGM()) return;
   const actor = getBackingActor();
   if (!actor) {
     ui.notifications.error(`${MODULE_TITLE}: no backing actor.`);
@@ -379,12 +331,16 @@ async function handleHideItem(itemId, app) {
     return;
   }
 
-  await setItemHidden(itemId, true);
+  const staged = await setItemHidden(itemId, true);
+  if (!staged) {
+    ui.notifications.error(`${MODULE_TITLE}: failed to move item to private staging.`);
+    return;
+  }
   await writeEntry({
     type: "hidden.staged",
     requestId: `qm-rehide-${itemId}-${Date.now()}`,
     userId: game.user.id,
-    itemId,
+    itemId: staged.id,
     itemName: item.name,
     backingActorId: actor.id,
     visibility: "gm"
@@ -395,7 +351,7 @@ async function handleHideItem(itemId, app) {
 }
 
 async function handleDeleteItem(itemId, itemName, app) {
-  if (!game.user.isGM) return;
+  if (!isActiveStorageGM()) return;
   const actor = getBackingActor();
   if (!actor) {
     ui.notifications.error(`${MODULE_TITLE}: no backing actor.`);
@@ -419,6 +375,7 @@ async function handleDeleteItem(itemId, itemName, app) {
   if (!confirmed) return;
 
   try {
+    requireActiveStorageGM();
     await actor.deleteEmbeddedDocuments("Item", [itemId]);
 
     await writeEntry({

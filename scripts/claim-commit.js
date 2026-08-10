@@ -7,25 +7,10 @@
  * partway, the claim entry provides enough information to reconstruct
  * what happened.
  *
- * Two directions, intentionally asymmetric:
- *
- * EGRESS (bag → player):
- *   Order: delete from bag, then create on player.
- *   Rationale: the bag is the contended resource. Players race to claim
- *     the same item. Delete-first on the bag ensures atomic ownership:
- *     only one delete succeeds, the loser gets a clean error.
- *   Failure mode if step 4 (create) fails: item is gone from bag but
- *     not on player. The claim log entry holds the full item data so
- *     the GM can recreate the item on either side.
- *
- * INGRESS (player → bag):
- *   Order: create on bag, then delete from player.
- *   Rationale: the bag is the durable accumulator. Create-first ensures
- *     the bag has the item before the player loses theirs. If the
- *     delete fails, the item briefly duplicates and the GM can resolve
- *     manually.
- *   Failure mode if step 4 (delete) fails: item exists in both places.
- *     Detected by inspecting the player's inventory after the operation.
+ * Both directions use create-first semantics. The source is never removed
+ * until the destination has accepted a sanitized copy. If source deletion
+ * then fails, the destination copy is deleted as compensation; a private
+ * recovery record is written only if that compensation also fails.
  *
  * Both directions:
  *   - Sanitization runs BEFORE the claim write. The destination _id is
@@ -45,9 +30,11 @@
  * active GM.
  */
 
-import { MODULE_ID, MODULE_TITLE } from "./constants.js";
+import { MODULE_TITLE } from "./constants.js";
 import { sanitizeItemForTransfer, buildItemUuid } from "./sanitization.js";
 import * as TransactionLog from "./transaction-log.js";
+import { isActiveStorageGM, requireActiveStorageGM } from "./storage-ledger.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
 
 export const LOG_TYPES = {
   EGRESS_CLAIM:  "transfer.egress.claim",
@@ -73,104 +60,17 @@ export const LOG_TYPES = {
  * @returns {Promise<Object>} Result describing what happened
  */
 export async function performEgress({ sourceItem, destActor, requestId, userId = game.user?.id }) {
-  validatePerformInputs("performEgress", { sourceItem, destActor, requestId });
-
-  const sourceActor = sourceItem.parent;
-  if (!sourceActor) {
-    throw new Error(`${MODULE_TITLE} | performEgress: sourceItem has no parent actor`);
-  }
-
-  // Capture full item data BEFORE sanitization mutates anything. The
-  // raw data goes into the claim entry for potential recovery.
-  const rawData = sourceItem.toObject();
-
-  // Sanitize, pre-generate destination _id
-  const sanitized = sanitizeItemForTransfer(rawData, destActor, {
-    sourceItemUuid: sourceItem.uuid
-  });
-  const destItemUuid = buildItemUuid(destActor, sanitized._id);
-
-  // 1. Write claim entry FIRST — this is the recovery anchor.
-  const claim = {
-    type: LOG_TYPES.EGRESS_CLAIM,
-    requestId,
-    userId,
-    sourceActorId: sourceActor.id,
-    sourceActorName: sourceActor.name,
-    sourceItemId: sourceItem.id,
-    sourceItemUuid: sourceItem.uuid,
-    sourceItemName: sourceItem.name,
-    destActorId: destActor.id,
-    destActorName: destActor.name,
-    destItemId: sanitized._id,
-    destItemUuid,
-    itemData: rawData
-  };
-  await TransactionLog.writeEntry(claim);
-
-  // 2. Delete from source (atomic ownership on the contended bag side)
-  try {
-    await sourceActor.deleteEmbeddedDocuments("Item", [sourceItem.id]);
-  } catch (err) {
-    await TransactionLog.writeEntry({
-      type: LOG_TYPES.EGRESS_FAILED,
-      requestId,
-      userId,
-      sourceActorName: sourceActor.name,
-      sourceItemName: sourceItem.name,
-      destActorName: destActor.name,
-      stage: "delete",
-      error: errToString(err)
-    });
-    return failureResult(requestId, "delete", err, { itemData: rawData });
-  }
-
-  // 3. Create on destination with keepId so the predicted UUID holds
-  let created = null;
-  try {
-    const result = await destActor.createEmbeddedDocuments("Item", [sanitized], { keepId: true });
-    created = Array.isArray(result) ? result[0] : result;
-  } catch (err) {
-    await TransactionLog.writeEntry({
-      type: LOG_TYPES.EGRESS_FAILED,
-      requestId,
-      userId,
-      sourceActorName: sourceActor.name,
-      sourceItemName: sourceItem.name,
-      destActorName: destActor.name,
-      stage: "create",
-      error: errToString(err),
-      itemData: rawData,
-      note: "Source delete already succeeded; item data preserved here for recovery."
-    });
-    return failureResult(requestId, "create", err, {
-      itemData: rawData,
-      recoveryAdvice: "Source item already deleted; recreate from itemData on either side."
-    });
-  }
-
-  // 4. Commit
-  const actualDestItemId = created?.id ?? sanitized._id;
-  await TransactionLog.writeEntry({
-    type: LOG_TYPES.EGRESS_COMMIT,
-    requestId,
-    userId,
-    sourceActorName: sourceActor.name,
-    sourceItemName: sourceItem.name,
-    destActorName: destActor.name,
-    actualDestItemId,
-    matchesPredictedId: actualDestItemId === sanitized._id
-  });
-
-  return {
-    success: true,
+  if (!isActiveStorageGM()) return { status: "failed", requestId, error: "active-gm-only" };
+  return performTransfer({
     direction: "egress",
+    sourceItem,
+    destActor,
     requestId,
-    sourceItemId: sourceItem.id,
-    destItemId: actualDestItemId,
-    destItemUuid: buildItemUuid(destActor, actualDestItemId),
-    sanitized
-  };
+    userId,
+    claimType: LOG_TYPES.EGRESS_CLAIM,
+    commitType: LOG_TYPES.EGRESS_COMMIT,
+    failedType: LOG_TYPES.EGRESS_FAILED
+  });
 }
 
 // ============================================================
@@ -188,106 +88,370 @@ export async function performEgress({ sourceItem, destActor, requestId, userId =
  * @returns {Promise<Object>}
  */
 export async function performIngress({ sourceItem, destActor, requestId, userId = game.user?.id }) {
-  validatePerformInputs("performIngress", { sourceItem, destActor, requestId });
+  if (!isActiveStorageGM()) return { status: "failed", requestId, error: "active-gm-only" };
+  return performTransfer({
+    direction: "ingress",
+    sourceItem,
+    destActor,
+    requestId,
+    userId,
+    claimType: LOG_TYPES.INGRESS_CLAIM,
+    commitType: LOG_TYPES.INGRESS_COMMIT,
+    failedType: LOG_TYPES.INGRESS_FAILED
+  });
+}
+
+async function performTransfer({
+  direction,
+  sourceItem,
+  destActor,
+  requestId,
+  userId,
+  claimType,
+  commitType,
+  failedType
+}) {
+  if (!isActiveStorageGM()) return { status: "failed", requestId, error: "active-gm-only" };
+  validatePerformInputs(`perform${direction === "egress" ? "Egress" : "Ingress"}`, {
+    sourceItem,
+    destActor,
+    requestId
+  });
 
   const sourceActor = sourceItem.parent;
   if (!sourceActor) {
-    throw new Error(`${MODULE_TITLE} | performIngress: sourceItem has no parent actor`);
+    throw new Error(`${MODULE_TITLE} | transfer: sourceItem has no parent actor`);
   }
 
   const rawData = sourceItem.toObject();
+  const adapter = getActiveSystemAdapter();
 
-  const sanitized = sanitizeItemForTransfer(rawData, destActor, {
-    sourceItemUuid: sourceItem.uuid
-  });
-  const destItemUuid = buildItemUuid(destActor, sanitized._id);
+  try {
+    if (typeof adapter?.canReceiveItem === "function"
+        && !adapter.canReceiveItem(sourceItem, destActor)) {
+      return failureResult(requestId, "preflight", "incompatible-destination-item");
+    }
+  } catch (err) {
+    return failureResult(requestId, "preflight", err, {
+      errorCode: "adapter-preflight-failed"
+    });
+  }
 
-  // 1. Claim
-  await TransactionLog.writeEntry({
-    type: LOG_TYPES.INGRESS_CLAIM,
+  let sanitized;
+  try {
+    sanitized = sanitizeItemForTransfer(rawData, destActor, {
+      sourceItem,
+      sourceItemUuid: sourceItem.uuid,
+      preserveHiddenFlag: false,
+      adapter
+    });
+  } catch (err) {
+    return failureResult(requestId, "preflight", err);
+  }
+  const predictedDestItemUuid = buildItemUuid(destActor, sanitized._id);
+  let itemQuantity = null;
+  try {
+    const normalized = adapter.normalizeItem(sourceItem);
+    if (Number.isFinite(normalized?.quantity)) itemQuantity = normalized.quantity;
+  } catch { /* metadata is optional; transfer safety does not depend on it */ }
+
+  // The canonical claim is written before mutation. Private-storage builds
+  // keep the full snapshot GM-only and project only a redacted public entry.
+  const claimEntry = await TransactionLog.writeEntry({
+    type: claimType,
     requestId,
     userId,
     sourceActorId: sourceActor.id,
+    sourceActorUuid: sourceActor.uuid ?? null,
     sourceActorName: sourceActor.name,
     sourceItemId: sourceItem.id,
     sourceItemUuid: sourceItem.uuid,
     sourceItemName: sourceItem.name,
+    itemQuantity,
     destActorId: destActor.id,
+    destActorUuid: destActor.uuid ?? null,
     destActorName: destActor.name,
     destItemId: sanitized._id,
-    destItemUuid,
+    destItemUuid: predictedDestItemUuid,
     itemData: rawData
   });
+  if (!claimEntry) {
+    return failureResult(requestId, "claim", "claim-log-unavailable", {
+      sourcePreserved: true
+    });
+  }
 
-  // 2. Create on destination FIRST (the bag accumulates safely before
-  //    the player loses their copy)
-  let created = null;
+  // Create first for both directions so a destination failure never removes
+  // the source. The operation coordinator serializes on source UUID.
+  let created;
   try {
+    requireActiveStorageGM();
     const result = await destActor.createEmbeddedDocuments("Item", [sanitized], { keepId: true });
     created = Array.isArray(result) ? result[0] : result;
+    created ??= destActor.items?.get?.(sanitized._id) ?? null;
+    if (!created) throw new Error("destination-create-returned-empty");
   } catch (err) {
-    await TransactionLog.writeEntry({
-      type: LOG_TYPES.INGRESS_FAILED,
+    await writeFailure({
+      failedType,
       requestId,
       userId,
-      sourceActorName: sourceActor.name,
-      sourceItemName: sourceItem.name,
-      destActorName: destActor.name,
+      sourceActor,
+      sourceItem,
+      destActor,
       stage: "create",
-      error: errToString(err)
+      error: err
     });
-    return failureResult(requestId, "create", err, { itemData: rawData });
+    await releaseTerminalSnapshot(requestId);
+    return failureResult(requestId, "create", err, {
+      sourcePreserved: true
+    });
   }
 
-  // 3. Delete from source (player side)
+  const actualDestItemId = created.id ?? sanitized._id;
+  let deleteWarning = null;
   try {
+    requireActiveStorageGM();
     await sourceActor.deleteEmbeddedDocuments("Item", [sourceItem.id]);
-  } catch (err) {
-    await TransactionLog.writeEntry({
-      type: LOG_TYPES.INGRESS_FAILED,
+    if (sourceActor.items?.get?.(sourceItem.id)) {
+      throw new Error("source-delete-did-not-remove-item");
+    }
+  } catch (deleteError) {
+    const canInspectSource = typeof sourceActor.items?.get === "function";
+    const sourceStillExists = canInspectSource
+      ? Boolean(sourceActor.items.get(sourceItem.id))
+      : null;
+
+    // A Foundry hook can throw after the embedded collection has already been
+    // updated. In that case the move itself completed; compensating would
+    // delete the only remaining copy.
+    if (canInspectSource && !sourceStillExists) {
+      deleteWarning = errToString(deleteError);
+      console.warn(
+        `${MODULE_TITLE} | source delete reported an error after removal; preserving destination`,
+        deleteError
+      );
+    } else {
+      const compensation = await compensateDestinationItem(destActor, actualDestItemId);
+      const recoveryRecorded = compensation.success
+        ? false
+        : await writePrivateRecovery({
+            direction,
+            requestId,
+            userId,
+            sourceActor,
+            sourceItem,
+            destActor,
+            destItemId: actualDestItemId,
+            rawData,
+            sanitized,
+            deleteError,
+            compensationError: compensation.error
+          });
+
+      await writeFailure({
+        failedType,
+        requestId,
+        userId,
+        sourceActor,
+        sourceItem,
+        destActor,
+        stage: compensation.success ? "delete-compensated" : "compensation",
+        error: deleteError,
+        extras: {
+          destItemId: actualDestItemId,
+          compensated: compensation.success,
+          compensationError: compensation.error ? errToString(compensation.error) : null,
+          recoveryRecorded
+        }
+      });
+
+      // If automatic compensation failed, only release the claim snapshot
+      // after the private recovery record was durably written. Otherwise the
+      // canonical claim remains the recovery source.
+      if (compensation.success || recoveryRecorded) {
+        await releaseTerminalSnapshot(requestId);
+      }
+
+      return failureResult(requestId, "delete", deleteError, {
+        destItemId: actualDestItemId,
+        compensated: compensation.success,
+        compensationError: compensation.error ? errToString(compensation.error) : null,
+        recoveryRecorded,
+        sourcePreserved: sourceStillExists,
+        recoveryAdvice: compensation.success
+          ? "Destination copy removed; source item was preserved."
+          : "Item may exist on both actors; a GM must reconcile the private recovery record."
+      });
+    }
+  }
+
+  let finalizationWarning = null;
+  let finalizationRecoveryRecorded = false;
+  try {
+    const commitEntry = await TransactionLog.writeEntry({
+      type: commitType,
       requestId,
       userId,
       sourceActorName: sourceActor.name,
+      sourceActorUuid: sourceActor.uuid ?? null,
       sourceItemName: sourceItem.name,
       destActorName: destActor.name,
-      stage: "delete",
-      error: errToString(err),
-      destItemId: created?.id ?? sanitized._id,
-      note: "Bag create already succeeded; player still holds the source. Manual reconciliation."
+      destActorUuid: destActor.uuid ?? null,
+      actualDestItemId,
+      actualDestItemUuid: buildItemUuid(destActor, actualDestItemId),
+      matchesPredictedId: actualDestItemId === sanitized._id,
+      deleteWarning
     });
-    return failureResult(requestId, "delete", err, {
-      destItemId: created?.id ?? sanitized._id,
-      recoveryAdvice: "Item now exists on both bag and source; GM should delete one copy."
+    if (!commitEntry) throw new Error("commit-log-unavailable");
+  } catch (commitError) {
+    // The document move is already complete. Never report it as failed and
+    // invite a duplicate retry merely because audit finalization failed.
+    finalizationWarning = errToString(commitError);
+    finalizationRecoveryRecorded = await writePrivateRecovery({
+      type: "transfer.finalization-failed",
+      status: "move-complete-audit-incomplete",
+      direction,
+      requestId,
+      userId,
+      sourceActor,
+      sourceItem,
+      destActor,
+      destItemId: actualDestItemId,
+      rawData,
+      sanitized,
+      finalizationError: commitError
     });
+    console.error(`${MODULE_TITLE} | transfer completed but commit logging failed`, commitError);
   }
-
-  // 4. Commit
-  const actualDestItemId = created?.id ?? sanitized._id;
-  await TransactionLog.writeEntry({
-    type: LOG_TYPES.INGRESS_COMMIT,
-    requestId,
-    userId,
-    sourceActorName: sourceActor.name,
-    sourceItemName: sourceItem.name,
-    destActorName: destActor.name,
-    actualDestItemId,
-    matchesPredictedId: actualDestItemId === sanitized._id
-  });
+  const snapshotReleased = await releaseTerminalSnapshot(requestId);
+  if (!snapshotReleased && !finalizationWarning) {
+    finalizationWarning = "terminal-snapshot-release-failed";
+  }
 
   return {
     success: true,
-    direction: "ingress",
+    direction,
     requestId,
     sourceItemId: sourceItem.id,
+    sourceItemUuid: sourceItem.uuid,
     destItemId: actualDestItemId,
     destItemUuid: buildItemUuid(destActor, actualDestItemId),
-    sanitized
+    deleteWarning,
+    finalizationWarning,
+    finalizationRecoveryRecorded
   };
 }
 
 // ============================================================
 // Helpers
 // ============================================================
+
+export async function compensateDestinationItem(destActor, destItemId) {
+  try {
+    requireActiveStorageGM();
+    await destActor.deleteEmbeddedDocuments("Item", [destItemId]);
+    if (destActor.items?.get?.(destItemId)) {
+      throw new Error("compensation-delete-did-not-remove-item");
+    }
+    return { success: true, error: null };
+  } catch (error) {
+    if (typeof destActor.items?.get === "function" && !destActor.items.get(destItemId)) {
+      console.warn(
+        `${MODULE_TITLE} | compensation delete reported an error after removal`,
+        error
+      );
+      return { success: true, error: null, warning: errToString(error) };
+    }
+    console.error(
+      `${MODULE_TITLE} | destination compensation failed for ${destItemId}`,
+      error
+    );
+    return { success: false, error };
+  }
+}
+
+async function writeFailure({
+  failedType,
+  requestId,
+  userId,
+  sourceActor,
+  sourceItem,
+  destActor,
+  stage,
+  error,
+  extras = {}
+}) {
+  await TransactionLog.writeEntry({
+    type: failedType,
+    requestId,
+    userId,
+    sourceActorName: sourceActor.name,
+    sourceActorUuid: sourceActor.uuid ?? null,
+    sourceItemName: sourceItem.name,
+    sourceItemUuid: sourceItem.uuid ?? null,
+    destActorName: destActor.name,
+    destActorUuid: destActor.uuid ?? null,
+    stage,
+    error: errToString(error),
+    ...extras
+  });
+}
+
+/**
+ * Persist full recovery material only when automatic compensation fails.
+ * The helper is loaded lazily so transfer safety still works during startup
+ * recovery or if private storage could not be initialized.
+ */
+async function writePrivateRecovery(record) {
+  try {
+    const recovery = await import("./recovery-records.js");
+    if (typeof recovery.writeRecoveryRecord !== "function") return false;
+    const written = await recovery.writeRecoveryRecord({
+      type: "transfer.compensation-failed",
+      status: "needs-reconciliation",
+      timestamp: Date.now(),
+      ...record,
+      sourceActor: {
+        id: record.sourceActor?.id ?? null,
+        uuid: record.sourceActor?.uuid ?? null,
+        name: record.sourceActor?.name ?? null
+      },
+      sourceItem: {
+        id: record.sourceItem?.id ?? null,
+        uuid: record.sourceItem?.uuid ?? null,
+        name: record.sourceItem?.name ?? null
+      },
+      destActor: {
+        id: record.destActor?.id ?? null,
+        uuid: record.destActor?.uuid ?? null,
+        name: record.destActor?.name ?? null
+      },
+      ...(record.deleteError ? { deleteError: errToString(record.deleteError) } : {}),
+      ...(record.compensationError
+        ? { compensationError: errToString(record.compensationError) }
+        : {}),
+      ...(record.finalizationError
+        ? { finalizationError: errToString(record.finalizationError) }
+        : {})
+    });
+    return Boolean(written);
+  } catch (err) {
+    console.error(`${MODULE_TITLE} | could not write private recovery record`, err);
+    return false;
+  }
+}
+
+async function releaseTerminalSnapshot(requestId) {
+  try {
+    await TransactionLog.releaseItemSnapshot(requestId);
+    return true;
+  } catch (err) {
+    // Snapshot retention is safer than changing an already terminal transfer
+    // result. A later maintenance pass can release it.
+    console.warn(`${MODULE_TITLE} | could not release terminal Item snapshot`, err);
+    return false;
+  }
+}
 
 function validatePerformInputs(label, { sourceItem, destActor, requestId }) {
   if (!sourceItem) {
@@ -299,7 +463,7 @@ function validatePerformInputs(label, { sourceItem, destActor, requestId }) {
   if (typeof requestId !== "string" || !requestId) {
     throw new TypeError(`${MODULE_TITLE} | ${label}: requestId (non-empty string) required`);
   }
-  if (!game.user?.isGM) {
+  if (!isActiveStorageGM()) {
     throw new Error(`${MODULE_TITLE} | ${label}: must be called by a GM client`);
   }
 }

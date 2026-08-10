@@ -9,7 +9,7 @@
  */
 
 import { MODULE_ID, MODULE_TITLE, FLAGS, SETTINGS, HOOKS } from "../constants.js";
-import { getBackingActor } from "../backing-actor.js";
+import { getBackingActor, getStagingActor } from "../backing-actor.js";
 import * as Query from "../transaction-log-query.js";
 import * as TransactionLog from "../transaction-log.js";
 import { promptTransactionLogPreferences } from "./preferences-dialog.js";
@@ -322,7 +322,11 @@ function scheduleLogRefresh() {
 export function registerLogRefreshHooks() {
   Hooks.on("updateActor", (actor, changes) => {
     const backing = getBackingActor();
-    if (!backing || actor.id !== backing.id) return;
+    const staging = getStagingActor();
+    const isLogStorage = [backing, staging].some(candidate =>
+      candidate && (actor.uuid === candidate.uuid || actor.id === candidate.id)
+    );
+    if (!isLogStorage) return;
     if (foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.TRANSACTION_LOG}`)) {
       scheduleLogRefresh();
     }

@@ -1,0 +1,14 @@
+{
+  "name": "quartermaster",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node tools/check-syntax.mjs",
+    "test": "node tools/check-syntax.mjs && node --test \"tests/*.test.mjs\" && node tools/validate-release.mjs",
+    "package": "node tools/package.mjs && node tools/validate-package.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

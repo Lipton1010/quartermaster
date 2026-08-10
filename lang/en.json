@@ -11,15 +11,15 @@
     "settings": {
       "enforceCapacity": {
         "name": "Enforce Capacity Limit",
-        "hint": "When enabled, the inventory respects a weight limit. Default 500 lbs matches a Bag of Holding. Disable for unlimited capacity."
+        "hint": "When enabled, the inventory respects a load limit using the active game system's supported unit. Systems without load support ignore this setting."
       },
       "capacityLimit": {
-        "name": "Capacity Limit (lbs)",
-        "hint": "Weight cap when 'Enforce Capacity Limit' is enabled. The Bag of Holding standard is 500."
+        "name": "Capacity Limit",
+        "hint": "Load cap when capacity enforcement is enabled. D&D 5e retains the existing 500 lb default; other adapters may use a different unit."
       },
       "applyCurrencyWeight": {
-        "name": "Currency Counts Toward Weight",
-        "hint": "When enabled, currency weight is included in the capacity total. Built-in currencies use the dnd5e standard of 50 coins per pound; custom currencies use their optional per-unit weight. Off by default."
+        "name": "Currency Counts Toward Load",
+        "hint": "When enabled, native and custom currency load is included when the active system adapter supports it. Off by default."
       },
       "currencyApprovalMode": {
         "name": "Currency Approval Mode",
@@ -51,7 +51,7 @@
       },
       "unidentifiedDisplay": {
         "name": "Unidentified Item Display",
-        "hint": "How items marked unidentified appear in the inventory."
+        "hint": "How unidentified items appear when the active game system exposes identification data."
       },
       "inventoryButtonLabel": {
         "name": "Inventory Button Name",
@@ -63,7 +63,7 @@
       },
       "hidePricesFromPlayers": {
         "name": "Hide Item Prices from Players",
-        "hint": "When enabled, item prices are hidden from players in the inventory. GMs still see prices."
+        "hint": "When enabled, adapter-provided item values are hidden from players. GMs still see them."
       },
       "enableInventoryToken": {
         "name": "Enable Inventory Token Shortcut",
@@ -160,7 +160,9 @@
     "messages": {
       "loaded": "Quartermaster is loaded.",
       "backingActorCreated": "Quartermaster backing actor created.",
-      "backingActorMissing": "Quartermaster backing actor not found. It will be created on next world load."
+      "backingActorMissing": "Quartermaster backing actor not found. It will be created on next world load.",
+      "setupRequired": "Quartermaster requires a GM to finish storage setup for this game system.",
+      "unsupportedWriteTransport": "Secure player requests are unavailable in this Foundry version. Ask the GM to make this change."
     }
   }
 }

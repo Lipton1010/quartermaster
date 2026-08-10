@@ -73,6 +73,17 @@ export function getResource(id) {
  * @returns {Promise<Object|null>} the created resource, or null on failure
  */
 export async function createResource(input) {
+  if (!isActiveStorageGM()) {
+    console.warn(`${MODULE_TITLE} | createResource: active GM only`);
+    return null;
+  }
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return createResourceUnlocked(input);
+  });
+}
+
+async function createResourceUnlocked(input) {
   if (!game.user.isGM) {
     console.warn(`${MODULE_TITLE} | createResource: GM only`);
     return null;
@@ -126,6 +137,17 @@ export async function createResource(input) {
  * @returns {Promise<Object|null>} the updated resource, or null on failure
  */
 export async function updateResource(id, changes) {
+  if (!isActiveStorageGM()) {
+    console.warn(`${MODULE_TITLE} | updateResource: active GM only`);
+    return null;
+  }
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return updateResourceUnlocked(id, changes);
+  });
+}
+
+async function updateResourceUnlocked(id, changes) {
   if (!game.user.isGM) {
     console.warn(`${MODULE_TITLE} | updateResource: GM only`);
     return null;
@@ -179,6 +201,17 @@ export async function updateResource(id, changes) {
  * @returns {Promise<boolean>} true if a resource was removed
  */
 export async function deleteResource(id) {
+  if (!isActiveStorageGM()) {
+    console.warn(`${MODULE_TITLE} | deleteResource: active GM only`);
+    return false;
+  }
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return deleteResourceUnlocked(id);
+  });
+}
+
+async function deleteResourceUnlocked(id) {
   if (!game.user.isGM) {
     console.warn(`${MODULE_TITLE} | deleteResource: GM only`);
     return false;
@@ -208,6 +241,16 @@ export async function deleteResource(id) {
  * @returns {Promise<Object>} result envelope
  */
 export async function applyDelta(resourceId, delta) {
+  if (!isActiveStorageGM()) {
+    return { status: "failed", error: "active-gm-required" };
+  }
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return applyDeltaUnlocked(resourceId, delta);
+  });
+}
+
+async function applyDeltaUnlocked(resourceId, delta) {
   if (!game.user.isGM) {
     return { status: "failed", error: "gm-only" };
   }
@@ -298,3 +341,8 @@ function sanitizeMax(raw) {
   if (raw <= 0) return null;
   return Math.floor(raw);
 }
+import {
+  isActiveStorageGM,
+  requireActiveStorageGM,
+  withStorageLedgerLock
+} from "./storage-ledger.js";

@@ -12,10 +12,8 @@
  *      the Claim-and-Commit pattern in step 8 (the caller needs to log
  *      the destination UUID in the transaction before the create fires).
  *
- *   2. Strips owner-specific state (equipped, attuned, prepared) that
- *      doesn't make sense on the backing actor, and clears transient
- *      module caches (midi-qol runtime flags, dae caches) that could
- *      carry stale data from the source actor's context.
+ *   2. Delegates all system and integration-specific cleanup to the active
+ *      adapter, then clears Quartermaster's own transient transfer flags.
  *
  *   3. Selectively rewrites Active Effect origins. Effects whose origin
  *      points to the source item get their origin rewritten to point to
@@ -43,6 +41,7 @@
  */
 
 import { MODULE_ID, FLAGS } from "./constants.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
 
 // ============================================================
 // Public API
@@ -78,23 +77,40 @@ export function sanitizeItemForTransfer(sourceData, destinationActor, options = 
 
   const {
     sourceItemUuid = null,
-    preserveHiddenFlag = true
+    sourceItem = null,
+    preserveHiddenFlag = true,
+    adapter = getActiveSystemAdapter()
   } = options;
 
-  // Clone first to avoid mutating the caller's data
-  const data = foundry.utils.deepClone(sourceData);
+  // System-specific ownership state is prepared by the active adapter. The
+  // generic adapter only clones, preserving unknown system data verbatim.
+  let prepared = sourceData;
+  if (typeof adapter?.prepareItemForTransfer === "function") {
+    prepared = adapter.prepareItemForTransfer(sourceData, {
+      sourceItem,
+      sourceItemUuid,
+      destinationActor
+    });
+    if (!prepared || typeof prepared !== "object" || typeof prepared.then === "function") {
+      throw new TypeError(
+        "sanitizeItemForTransfer: adapter.prepareItemForTransfer must return item data synchronously"
+      );
+    }
+  }
+
+  // Clone again so even a poorly behaved adapter cannot make later core
+  // transformations mutate the object it returned.
+  const data = foundry.utils.deepClone(prepared);
 
   // 1. Generate destination _id (overwrites any existing one)
   data._id = generateItemId();
   const destinationItemUuid = buildItemUuid(destinationActor, data._id);
 
-  // 2. Strip owner-specific state
-  stripOwnerSpecificState(data);
-
-  // 3. Strip transient module caches
+  // 2. Strip Quartermaster's transfer-only flags. System and third-party
+  // fields are intentionally not interpreted here; that belongs to adapters.
   stripTransientCaches(data, { preserveHiddenFlag });
 
-  // 4. Rewrite effect origins selectively
+  // 3. Rewrite effect origins selectively
   if (Array.isArray(data.effects)) {
     data.effects = data.effects.map(effect =>
       rewriteEffectOrigin(effect, sourceItemUuid, destinationItemUuid)
@@ -127,64 +143,25 @@ export function buildItemUuid(actor, itemId) {
   if (typeof itemId !== "string" || !itemId) {
     throw new TypeError("buildItemUuid: itemId must be a non-empty string");
   }
-  return `Actor.${actor.id}.Item.${itemId}`;
+  // Synthetic Token Actors have scene/token-qualified UUIDs. Building from
+  // actor.uuid preserves that scope; world actors retain `Actor.<id>`.
+  const actorUuid = typeof actor.uuid === "string" && actor.uuid
+    ? actor.uuid
+    : `Actor.${actor.id}`;
+  return `${actorUuid}.Item.${itemId}`;
 }
 
 // ============================================================
-// Owner-specific state stripping
+// Legacy owner-state facade
 // ============================================================
 
 /**
- * Reset fields whose meaning is tied to a specific owner: equipped,
- * attuned (current owner is attuned), prepared spells. Mutates the input
- * (called only on the deep-cloned working copy inside sanitize).
- *
- * Field handling:
- *   - system.equipped: true → false
- *   - system.attuned: true → false (dnd5e v5 boolean state; v3 also had this)
- *   - system.attunement: 2 → 1 (dnd5e v3 numeric: 0=none, 1=required, 2=attuned).
- *                       In v5+, attunement is a STRING describing the
- *                       requirement (`""`, `"optional"`, `"required"`), not
- *                       the state; this code path is a no-op on v5 data
- *                       and is preserved only for legacy v3 compat.
- *   - system.preparation.prepared: true → false
- *
- * Fields explicitly preserved:
- *   - quantity, weight, price, rarity, description
- *   - identified, unidentified.name
- *   - uses.value (current charges should persist)
- *   - damage, armor, range, properties
- *   - proficient (item-category dependent, not strictly owner-bound)
+ * Retained for macros and legacy diagnostics. The active adapter owns the
+ * transformation; generic systems receive a deep clone with opaque data
+ * unchanged.
  */
 export function stripOwnerSpecificState(data) {
-  const sys = data.system;
-  if (!sys || typeof sys !== "object") return data;
-
-  // Equipped state
-  if ("equipped" in sys) {
-    sys.equipped = false;
-  }
-
-  // Legacy boolean attunement field
-  if ("attuned" in sys) {
-    sys.attuned = false;
-  }
-
-  // Modern numeric attunement: 0 = none, 1 = required, 2 = attuned-by-owner
-  // We want to reset "attuned by current owner" back to "required" since
-  // the destination will need to attune itself
-  if (typeof sys.attunement === "number" && sys.attunement === 2) {
-    sys.attunement = 1;
-  }
-
-  // Prepared spell state
-  if (sys.preparation && typeof sys.preparation === "object") {
-    if ("prepared" in sys.preparation) {
-      sys.preparation.prepared = false;
-    }
-  }
-
-  return data;
+  return getActiveSystemAdapter().prepareItemForTransfer(data, { legacyFacade: true });
 }
 
 // ============================================================
@@ -192,35 +169,12 @@ export function stripOwnerSpecificState(data) {
 // ============================================================
 
 /**
- * Remove runtime caches from third-party modules and clear our own flag
- * namespace (except optionally preserving the `hidden` flag for GM Loot
- * Prep). Mutates the input.
+ * Clear Quartermaster's own transfer-only namespace, except optionally
+ * preserving the `hidden` flag for GM Loot Prep. Third-party flags are opaque
+ * to core and may only be changed by a system adapter. Mutates the input.
  */
 export function stripTransientCaches(data, { preserveHiddenFlag = true } = {}) {
   if (!data.flags || typeof data.flags !== "object") return data;
-
-  // midi-qol runtime cache
-  if (data.flags["midi-qol"] && typeof data.flags["midi-qol"] === "object") {
-    const midi = data.flags["midi-qol"];
-    // These keys store transient roll/decision data
-    delete midi.advantage;
-    delete midi.disadvantage;
-    delete midi.lastSelectedTokenIds;
-    delete midi.macroCalls;
-    delete midi.cached;
-    // If the namespace ends up empty, drop it entirely
-    if (Object.keys(midi).length === 0) {
-      delete data.flags["midi-qol"];
-    }
-  }
-
-  // Dynamic Active Effects (dae) cached state
-  if (data.flags.dae && typeof data.flags.dae === "object") {
-    delete data.flags.dae.cached;
-    if (Object.keys(data.flags.dae).length === 0) {
-      delete data.flags.dae;
-    }
-  }
 
   // Our own namespace: clear everything except `hidden` (if preserve enabled)
   if (data.flags[MODULE_ID] && typeof data.flags[MODULE_ID] === "object") {

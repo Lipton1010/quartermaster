@@ -1,12 +1,15 @@
 /**
  * Quartermaster - Currency definitions and custom currency storage.
  *
- * D&D5e's five standard balances remain in actor.system.currency. Custom
- * currencies and presentation options are stored in one Quartermaster flag.
+ * Native balances are read and mutated through the active system adapter.
+ * Custom currencies and all presentation options remain in one Quartermaster
+ * flag. The v0.1 currency facade is preserved for macro compatibility.
  */
 
 import { MODULE_ID, MODULE_TITLE, FLAGS, SETTINGS } from "./constants.js";
-import { getBackingActor } from "./backing-actor.js";
+import { getBackingActor, getStagingActor } from "./backing-actor.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
+import { GENERIC_CURRENCY_ID } from "./system-adapters/generic.js";
 
 export const STANDARD_CURRENCIES = Object.freeze({
   pp: { id: "pp", name: "Platinum", symbol: "PP", gpRate: 10 },
@@ -20,15 +23,19 @@ export const STANDARD_CURRENCY_ORDER = Object.freeze(["pp", "gp", "ep", "sp", "c
 export const DEFAULT_CURRENCY_IMAGE = "icons/svg/coins.svg";
 export const DEFAULT_REFERENCE_CURRENCY_ID = "gp";
 
-const CURRENCY_CONFIG_VERSION = 2;
+export const CURRENCY_CONFIG_VERSION = 3;
 const hasOwn = (object, property) => Object.prototype.hasOwnProperty.call(object, property);
 
 export function getCurrencyConfig(actor = getBackingActor()) {
+  const adapter = getActiveSystemAdapter();
+  const nativeDefinitions = getNativeCurrencyDefinitions(actor);
+  const nativeIds = nativeDefinitions.map(currency => currency.id);
   const raw = actor?.getFlag?.(MODULE_ID, FLAGS.CURRENCY_CONFIG);
   const hasStoredConfig = raw && typeof raw === "object" && !Array.isArray(raw);
-  const standard = {};
+  const standard = normalizeStoredNativePresentation(raw?.standard);
 
-  for (const id of STANDARD_CURRENCY_ORDER) {
+  for (const definition of nativeDefinitions) {
+    const id = definition.id;
     const saved = hasStoredConfig && raw.standard?.[id] && typeof raw.standard[id] === "object"
       ? raw.standard[id]
       : {};
@@ -36,37 +43,42 @@ export function getCurrencyConfig(actor = getBackingActor()) {
       hidden: Boolean(saved.hidden),
       image: cleanString(saved.image),
       referenceRate: positiveNumber(saved.referenceRate ?? saved.gpRate)
-        ?? STANDARD_CURRENCIES[id].gpRate
+        ?? definition.referenceRate
     };
   }
 
   // Carry the old per-client Hide Electrum preference into the new world-level
   // configuration the first time the currency manager writes its data.
-  if (!hasStoredConfig) {
+  if (!hasStoredConfig && nativeIds.includes("ep")) {
     try {
       standard.ep.hidden = Boolean(game.settings.get(MODULE_ID, SETTINGS.HIDE_ELECTRUM));
     } catch { /* legacy setting unavailable */ }
   }
 
-  const custom = Array.isArray(raw?.custom)
+  const storedCustom = Array.isArray(raw?.custom)
     ? raw.custom.map(normalizeCustomCurrency).filter(Boolean)
     : [];
+  const custom = !hasStoredConfig && nativeDefinitions.length === 0 && storedCustom.length === 0
+    ? [createGenericDefaultCurrency()]
+    : storedCustom;
 
-  const availableIds = new Set([...STANDARD_CURRENCY_ORDER, ...custom.map(currency => currency.id)]);
-  const requestedReferenceId = cleanString(raw?.referenceCurrencyId) || DEFAULT_REFERENCE_CURRENCY_ID;
+  const availableIds = new Set([...nativeIds, ...custom.map(currency => currency.id)]);
+  const defaultReferenceCurrencyId = getDefaultReferenceCurrencyId(adapter, nativeIds, custom);
+  const requestedReferenceId = cleanString(raw?.referenceCurrencyId) || defaultReferenceCurrencyId;
   let referenceCurrencyId = availableIds.has(requestedReferenceId)
     ? requestedReferenceId
-    : DEFAULT_REFERENCE_CURRENCY_ID;
+    : defaultReferenceCurrencyId;
 
-  const requestedReference = STANDARD_CURRENCIES[referenceCurrencyId]
+  const requestedReference = nativeIds.includes(referenceCurrencyId)
     ? standard[referenceCurrencyId]
     : custom.find(currency => currency.id === referenceCurrencyId);
   if (!positiveNumber(requestedReference?.referenceRate)) {
-    referenceCurrencyId = DEFAULT_REFERENCE_CURRENCY_ID;
+    referenceCurrencyId = findFirstConvertibleCurrencyId(nativeIds, standard, custom)
+      ?? defaultReferenceCurrencyId;
   }
 
   // The selected reference is always visible and always equals one unit of itself.
-  if (STANDARD_CURRENCIES[referenceCurrencyId]) {
+  if (nativeIds.includes(referenceCurrencyId)) {
     standard[referenceCurrencyId] = {
       ...standard[referenceCurrencyId],
       hidden: false,
@@ -80,10 +92,24 @@ export function getCurrencyConfig(actor = getBackingActor()) {
     }
   }
 
-  return { version: CURRENCY_CONFIG_VERSION, referenceCurrencyId, standard, custom };
+  return {
+    version: CURRENCY_CONFIG_VERSION,
+    systemId: getAdapterSystemId(adapter),
+    referenceCurrencyId,
+    standard,
+    custom
+  };
 }
 
 export async function ensureCurrencyConfig(actor = getBackingActor()) {
+  if (!isActiveStorageGM()) return false;
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return ensureCurrencyConfigUnlocked(actor);
+  });
+}
+
+async function ensureCurrencyConfigUnlocked(actor = getBackingActor()) {
   if (!game.user.isGM || !actor) return false;
   const existing = actor.getFlag?.(MODULE_ID, FLAGS.CURRENCY_CONFIG);
   if (existing && typeof existing === "object" && !Array.isArray(existing)
@@ -95,19 +121,19 @@ export async function ensureCurrencyConfig(actor = getBackingActor()) {
 
 export function getCurrencies(actor = getBackingActor(), { includeHidden = true, hideZero = false } = {}) {
   if (!actor) return [];
+  const adapter = getActiveSystemAdapter();
   const config = getCurrencyConfig(actor);
-  const native = actor.system?.currency ?? {};
-
-  const standard = STANDARD_CURRENCY_ORDER.map((id, index) => {
-    const definition = STANDARD_CURRENCIES[id];
-    const presentation = config.standard[id];
+  const native = getNativeCurrencyDefinitions(actor).map((definition, index) => {
+    const presentation = config.standard[definition.id] ?? {};
     return {
       ...definition,
-      value: normalizeAmount(native[id], 0),
+      value: normalizeAmount(definition.value, 0),
       hidden: presentation.hidden,
       image: presentation.image,
       hasImage: Boolean(presentation.image),
       isCustom: false,
+      source: "native",
+      systemId: getAdapterSystemId(adapter),
       order: index,
       referenceRate: presentation.referenceRate
     };
@@ -117,10 +143,12 @@ export function getCurrencies(actor = getBackingActor(), { includeHidden = true,
     ...currency,
     hasImage: Boolean(currency.image),
     isCustom: true,
-    order: STANDARD_CURRENCY_ORDER.length + (currency.order ?? index)
+    source: "custom",
+    systemId: null,
+    order: native.length + (currency.order ?? index)
   }));
 
-  const combined = [...standard, ...custom];
+  const combined = [...native, ...custom];
   const gpReferenceRate = positiveNumber(
     combined.find(currency => currency.id === DEFAULT_REFERENCE_CURRENCY_ID)?.referenceRate
   );
@@ -171,6 +199,14 @@ export function getCurrencyGpRate(currencyOrId, actor = getBackingActor()) {
 }
 
 export async function createCustomCurrency(input, actor = getBackingActor()) {
+  if (!isActiveStorageGM()) return { status: "failed", error: "active-gm-required" };
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return createCustomCurrencyUnlocked(input, actor);
+  });
+}
+
+async function createCustomCurrencyUnlocked(input, actor = getBackingActor()) {
   if (!game.user.isGM) return { status: "failed", error: "gm-only" };
   if (!actor) return { status: "failed", error: "no-backing-actor" };
 
@@ -205,11 +241,20 @@ export async function createCustomCurrency(input, actor = getBackingActor()) {
 }
 
 export async function updateCurrency(currencyId, changes, actor = getBackingActor()) {
+  if (!isActiveStorageGM()) return { status: "failed", error: "active-gm-required" };
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return updateCurrencyUnlocked(currencyId, changes, actor);
+  });
+}
+
+async function updateCurrencyUnlocked(currencyId, changes, actor = getBackingActor()) {
   if (!game.user.isGM) return { status: "failed", error: "gm-only" };
   if (!actor) return { status: "failed", error: "no-backing-actor" };
 
   const config = getCurrencyConfig(actor);
-  if (STANDARD_CURRENCIES[currencyId]) {
+  const existingCurrency = getCurrency(currencyId, actor);
+  if (existingCurrency?.source === "native") {
     const current = config.standard[currencyId];
     const isReference = config.referenceCurrencyId === currencyId;
     const hidden = changes?.hidden === undefined ? current.hidden : Boolean(changes.hidden);
@@ -263,6 +308,14 @@ export async function setCurrencyHidden(currencyId, hidden, actor = getBackingAc
  * current rate, so only the unit used to describe totals changes.
  */
 export async function setReferenceCurrency(currencyId, actor = getBackingActor()) {
+  if (!isActiveStorageGM()) return { status: "failed", error: "active-gm-required" };
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return setReferenceCurrencyUnlocked(currencyId, actor);
+  });
+}
+
+async function setReferenceCurrencyUnlocked(currencyId, actor = getBackingActor()) {
   if (!game.user.isGM) return { status: "failed", error: "gm-only" };
   if (!actor) return { status: "failed", error: "no-backing-actor" };
 
@@ -276,7 +329,7 @@ export async function setReferenceCurrency(currencyId, actor = getBackingActor()
   const selectedRate = positiveNumber(selected.referenceRate);
   if (!selectedRate) return { status: "failed", error: "currency-has-no-conversion" };
 
-  for (const id of STANDARD_CURRENCY_ORDER) {
+  for (const id of getNativeCurrencyDefinitions(actor).map(currency => currency.id)) {
     config.standard[id] = {
       ...config.standard[id],
       referenceRate: roundRate(config.standard[id].referenceRate / selectedRate)
@@ -290,7 +343,7 @@ export async function setReferenceCurrency(currencyId, actor = getBackingActor()
   }));
   config.referenceCurrencyId = currencyId;
 
-  if (STANDARD_CURRENCIES[currencyId]) {
+  if (selected.source === "native") {
     config.standard[currencyId] = {
       ...config.standard[currencyId],
       hidden: false,
@@ -333,11 +386,22 @@ export async function setReferenceCurrency(currencyId, actor = getBackingActor()
 }
 
 export async function deleteCustomCurrency(currencyId, actor = getBackingActor()) {
+  if (!isActiveStorageGM()) return { status: "failed", error: "active-gm-required" };
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return deleteCustomCurrencyUnlocked(currencyId, actor);
+  });
+}
+
+async function deleteCustomCurrencyUnlocked(currencyId, actor = getBackingActor()) {
   if (!game.user.isGM) return { status: "failed", error: "gm-only" };
   if (!actor) return { status: "failed", error: "no-backing-actor" };
-  if (STANDARD_CURRENCIES[currencyId]) return { status: "failed", error: "standard-currency" };
+  const existingCurrency = getCurrency(currencyId, actor);
+  if (existingCurrency?.source === "native") {
+    return { status: "failed", error: "standard-currency" };
+  }
 
-  const staged = actor.getFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY) ?? [];
+  const staged = getStagingActor()?.getFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY) ?? [];
   if (Array.isArray(staged) && staged.some(entry => (entry.currencyId ?? entry.type) === currencyId)) {
     return { status: "failed", error: "currency-has-staged-loot" };
   }
@@ -354,6 +418,14 @@ export async function deleteCustomCurrency(currencyId, actor = getBackingActor()
 }
 
 export async function applyCurrencyDelta(currencyId, delta, actor = getBackingActor()) {
+  if (!isActiveStorageGM()) return { status: "failed", error: "active-gm-required" };
+  return withStorageLedgerLock(async () => {
+    requireActiveStorageGM();
+    return applyCurrencyDeltaUnlocked(currencyId, delta, actor);
+  });
+}
+
+async function applyCurrencyDeltaUnlocked(currencyId, delta, actor = getBackingActor()) {
   if (!actor) return { status: "failed", error: "no-backing-actor" };
   if (typeof delta !== "number" || !Number.isFinite(delta)) {
     return { status: "failed", error: "invalid-delta", delta };
@@ -373,14 +445,31 @@ export async function applyCurrencyDelta(currencyId, delta, actor = getBackingAc
     };
   }
 
-  if (!currency.isCustom) {
-    await actor.update({ [`system.currency.${currencyId}`]: newValue });
+  if (currency.source === "native") {
+    const applied = await getActiveSystemAdapter().applyNativeCurrencyDelta(actor, currencyId, delta);
+    if (!applied?.ok) {
+      return {
+        status: "failed",
+        error: applied?.error ?? "native-currency-update-failed",
+        currencyType: currencyId,
+        currentBalance: previousValue,
+        requested: Math.abs(delta)
+      };
+    }
   } else {
     const config = getCurrencyConfig(actor);
     const index = config.custom.findIndex(entry => entry.id === currencyId);
     if (index < 0) return { status: "failed", error: "currency-not-found" };
     config.custom[index] = { ...config.custom[index], value: newValue };
-    await saveCurrencyConfig(actor, config);
+    try {
+      await saveCurrencyConfig(actor, config);
+    } catch (error) {
+      // Foundry hooks can report an error after the flag update has already
+      // committed. Treat the observed expected balance as success so callers
+      // do not retry and apply the same delta twice.
+      if (getCurrency(currencyId, actor)?.value !== newValue) throw error;
+      console.warn(`${MODULE_TITLE} | custom currency update reported an error after commit`, error);
+    }
   }
 
   return { status: "success", currency, previousValue, newValue };
@@ -394,10 +483,89 @@ export function roundCurrency(value) {
 async function saveCurrencyConfig(actor, config) {
   await actor.setFlag(MODULE_ID, FLAGS.CURRENCY_CONFIG, {
     version: CURRENCY_CONFIG_VERSION,
+    systemId: config.systemId ?? getAdapterSystemId(getActiveSystemAdapter()),
     referenceCurrencyId: config.referenceCurrencyId,
     standard: config.standard,
     custom: config.custom
   });
+}
+
+function getNativeCurrencyDefinitions(actor) {
+  const adapter = getActiveSystemAdapter();
+  let listed = [];
+  try {
+    listed = adapter.listNativeCurrencies(actor);
+  } catch (err) {
+    console.warn(`${MODULE_TITLE} | System adapter failed to list native currencies`, err);
+  }
+  if (!Array.isArray(listed)) return [];
+
+  const seen = new Set();
+  const definitions = [];
+  for (const raw of listed) {
+    const id = cleanString(raw?.id);
+    if (!id || seen.has(id)) continue;
+    const referenceRate = positiveNumber(raw.referenceRate ?? raw.gpRate);
+    if (!referenceRate) continue;
+    seen.add(id);
+    definitions.push({
+      id,
+      name: cleanString(raw.name) || id.toUpperCase(),
+      symbol: cleanSymbol(raw.symbol) || id.toUpperCase(),
+      value: normalizeAmount(raw.value, 0),
+      referenceRate
+    });
+  }
+  return definitions;
+}
+
+function normalizeStoredNativePresentation(rawStandard) {
+  if (!rawStandard || typeof rawStandard !== "object" || Array.isArray(rawStandard)) return {};
+  const standard = {};
+  for (const [id, raw] of Object.entries(rawStandard)) {
+    if (!cleanString(id) || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    standard[id] = {
+      hidden: Boolean(raw.hidden),
+      image: cleanString(raw.image),
+      referenceRate: positiveNumber(raw.referenceRate ?? raw.gpRate)
+    };
+  }
+  return standard;
+}
+
+function createGenericDefaultCurrency() {
+  return normalizeCustomCurrency({
+    id: GENERIC_CURRENCY_ID,
+    name: "Currency",
+    symbol: "CUR",
+    image: "",
+    value: 0,
+    hidden: false,
+    referenceRate: 1,
+    weightPerUnit: 0,
+    createdAt: Date.now(),
+    order: 0
+  });
+}
+
+function getDefaultReferenceCurrencyId(adapter, nativeIds, custom) {
+  const requested = cleanString(adapter?.defaultReferenceCurrencyId);
+  if (nativeIds.includes(requested) || custom.some(currency => currency.id === requested)) {
+    return requested;
+  }
+  return nativeIds[0] ?? custom[0]?.id ?? null;
+}
+
+function findFirstConvertibleCurrencyId(nativeIds, standard, custom) {
+  return nativeIds.find(id => positiveNumber(standard[id]?.referenceRate))
+    ?? custom.find(currency => positiveNumber(currency.referenceRate))?.id
+    ?? null;
+}
+
+function getAdapterSystemId(adapter) {
+  return adapter?.systemId === "*"
+    ? cleanString(globalThis.game?.system?.id) || "generic"
+    : cleanString(adapter?.systemId) || "generic";
 }
 
 function normalizeCustomCurrency(raw) {
@@ -455,3 +623,8 @@ function cleanString(value) {
 function cleanSymbol(value) {
   return cleanString(value).slice(0, 12);
 }
+import {
+  isActiveStorageGM,
+  requireActiveStorageGM,
+  withStorageLedgerLock
+} from "./storage-ledger.js";

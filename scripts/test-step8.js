@@ -369,8 +369,8 @@ async function runClaimCommitTests(t) {
     t.assertEq("Egress: no failure entries",
       trace.failures.length, 0
     );
-    t.assertEq("Egress: claim records itemData",
-      trace.claim.itemData?.name, "Egress Test Sword"
+    t.assert("Egress: terminal claim releases recovery snapshot",
+      !("itemData" in trace.claim)
     );
     t.assert("Egress: commit confirms predicted _id matched",
       trace.commit.matchesPredictedId === true

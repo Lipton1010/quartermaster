@@ -1,175 +1,231 @@
 /**
- * Quartermaster — Transaction Log
+ * Canonical transaction log storage.
  *
- * Read/write/search interface for the backing actor's transaction log.
- * Stored at `actor.flags.quartermaster.transactionLog` as an append-mostly
- * array.
- *
- * For step 3 (build sequence), this module provides:
- *   - findByRequestId: idempotency lookup, scans recent N entries
- *   - writeEntry:      append a new entry, enforces the configured cap
- *
- * Filtering, export, undo, and pagination are deferred to later build steps.
+ * Full entries live only on the GM-only staging actor. The shared vault holds
+ * an optional redacted projection for players when world visibility is "all".
  */
 
-import { MODULE_ID, MODULE_TITLE, FLAGS, SETTINGS } from "./constants.js";
-import { getBackingActor } from "./backing-actor.js";
+import { MODULE_ID, MODULE_TITLE, FLAGS, SETTINGS, HOOKS } from "./constants.js";
+import { getBackingActor, getStagingActor } from "./backing-actor.js";
+import { projectPublicTransactionLog } from "./storage-privacy.js";
+import {
+  isActiveStorageGM,
+  requireActiveStorageGM,
+  withStorageLedgerLock
+} from "./storage-ledger.js";
 
-/**
- * How many entries from the tail of the log to scan when looking up a
- * requestId. Tradeoff: larger window catches older replays but costs more.
- * 50 is plenty given typical session activity.
- */
 const LOG_LOOKUP_HORIZON = 50;
 
-/**
- * Find a transaction log entry by requestId. Used by the coordinator for
- * the durable layer of idempotency checking.
- *
- * Returns the matching entry, or null if not found within the lookup horizon.
- *
- * @param {string} requestId
- * @returns {Object|null}
- */
 export function findByRequestId(requestId) {
   if (!requestId) return null;
-
-  const actor = getBackingActor();
-  if (!actor) return null;
-
-  const log = actor.getFlag(MODULE_ID, FLAGS.TRANSACTION_LOG) ?? [];
-  const horizon = log.slice(-LOG_LOOKUP_HORIZON);
-
-  // Scan tail-first because recent matches are more likely
-  for (let i = horizon.length - 1; i >= 0; i--) {
-    if (horizon[i].requestId === requestId) {
-      return horizon[i];
-    }
+  const log = canonicalLog();
+  const start = Math.max(0, log.length - LOG_LOOKUP_HORIZON);
+  for (let index = log.length - 1; index >= start; index -= 1) {
+    if (log[index].requestId === requestId) return clone(log[index]);
   }
   return null;
 }
 
-/**
- * Append an entry to the transaction log. Enforces the configured cap by
- * trimming from the head when exceeded.
- *
- * GM-only; players should never reach this code path because all writes
- * route through the GM-side coordinator.
- *
- * @param {Object} entry  partial entry; id and timestamp auto-filled
- * @returns {Promise<Object|null>}  the full written entry, or null on no-op
- */
 export async function writeEntry(entry) {
-  if (!game.user.isGM) {
-    console.warn(`${MODULE_TITLE} | transaction-log.writeEntry called by non-GM; ignoring`);
+  if (!isActiveStorageGM()) {
+    console.warn(`${MODULE_TITLE} | transaction-log.writeEntry called outside the active GM; ignoring`);
     return null;
   }
-
-  const actor = getBackingActor();
-  if (!actor) {
-    console.warn(`${MODULE_TITLE} | transaction-log.writeEntry called with no backing actor; ignoring`);
-    return null;
-  }
-
-  const cap = game.settings.get(MODULE_ID, SETTINGS.TRANSACTION_LOG_CAP);
-  const currentLog = actor.getFlag(MODULE_ID, FLAGS.TRANSACTION_LOG) ?? [];
 
   const fullEntry = {
     id: foundry.utils.randomID(),
     timestamp: Date.now(),
-    ...entry
+    ...clone(entry)
   };
+  const written = await withStorageLedgerLock(async () => {
+    if (!isActiveStorageGM()) return null;
+    const staging = getStagingActor();
+    const backing = getBackingActor();
+    if (!staging || !backing) {
+      console.warn(`${MODULE_TITLE} | transaction-log.writeEntry called without complete storage; ignoring`);
+      return null;
+    }
 
-  let newLog = [...currentLog, fullEntry];
-  if (cap > 0 && newLog.length > cap) {
-    newLog = newLog.slice(-cap);
-  }
-
-  await actor.setFlag(MODULE_ID, FLAGS.TRANSACTION_LOG, newLog);
-  return fullEntry;
+    const updated = enforceCap([...canonicalLog(), fullEntry]);
+    await writeVerifiedLog(staging, updated, "canonical-transaction-log");
+    await syncPublicLog(backing, updated);
+    return clone(fullEntry);
+  });
+  if (written) Hooks.callAll(HOOKS.LOG_ENTRY_ADDED, clone(written));
+  return written;
 }
 
-/**
- * Read the full transaction log array. Used by future log UI and diagnostics.
- *
- * @returns {Object[]}
- */
+/** GMs read canonical entries; players can only read the shared projection. */
 export function readAll() {
-  const actor = getBackingActor();
-  if (!actor) return [];
-  return [...(actor.getFlag(MODULE_ID, FLAGS.TRANSACTION_LOG) ?? [])];
+  if (game.user?.isGM) return clone(canonicalLog());
+  const backing = getBackingActor();
+  return normalizeLog(backing?.getFlag?.(MODULE_ID, FLAGS.TRANSACTION_LOG));
 }
 
-/**
- * Diagnostic: how many entries are currently in the log.
- */
 export function count() {
-  const actor = getBackingActor();
-  if (!actor) return 0;
-  return (actor.getFlag(MODULE_ID, FLAGS.TRANSACTION_LOG) ?? []).length;
+  return readAll().length;
 }
 
-/**
- * Update an existing transaction log entry, merging in new fields. Used
- * by the Claim-and-Commit pipeline to transition a CLAIMED entry to
- * COMMITTED, FAILED, or ABORTED.
- *
- * The merge is shallow (top-level fields). If the requestId is not found
- * within the lookup horizon, returns null without writing.
- *
- * GM-only.
- *
- * @param {string} requestId
- * @param {Object} updates  fields to merge into the matching entry
- * @returns {Promise<Object|null>}  the updated entry, or null on no-op
- */
 export async function updateEntry(requestId, updates) {
-  if (!game.user.isGM) {
-    console.warn(`${MODULE_TITLE} | transaction-log.updateEntry called by non-GM; ignoring`);
+  if (!isActiveStorageGM()) {
+    console.warn(`${MODULE_TITLE} | transaction-log.updateEntry called outside the active GM; ignoring`);
     return null;
   }
   if (!requestId) return null;
+  const merged = await withStorageLedgerLock(async () => {
+    if (!isActiveStorageGM()) return null;
+    const staging = getStagingActor();
+    const backing = getBackingActor();
+    if (!staging || !backing) return null;
 
-  const actor = getBackingActor();
-  if (!actor) {
-    console.warn(`${MODULE_TITLE} | transaction-log.updateEntry called with no backing actor; ignoring`);
-    return null;
-  }
-
-  const log = actor.getFlag(MODULE_ID, FLAGS.TRANSACTION_LOG) ?? [];
-
-  // Find the index of the matching entry, scanning tail-first
-  let foundIndex = -1;
-  const startIndex = Math.max(0, log.length - LOG_LOOKUP_HORIZON);
-  for (let i = log.length - 1; i >= startIndex; i--) {
-    if (log[i].requestId === requestId) {
-      foundIndex = i;
-      break;
+    const log = canonicalLog();
+    const start = Math.max(0, log.length - LOG_LOOKUP_HORIZON);
+    let index = -1;
+    for (let cursor = log.length - 1; cursor >= start; cursor -= 1) {
+      if (log[cursor].requestId === requestId) {
+        index = cursor;
+        break;
+      }
     }
-  }
-  if (foundIndex === -1) {
-    return null;
-  }
+    if (index < 0) return null;
 
-  const merged = { ...log[foundIndex], ...updates };
-  const newLog = [...log];
-  newLog[foundIndex] = merged;
-
-  await actor.setFlag(MODULE_ID, FLAGS.TRANSACTION_LOG, newLog);
+    const nextEntry = { ...log[index], ...clone(updates), id: log[index].id };
+    const updated = [...log];
+    updated[index] = nextEntry;
+    await writeVerifiedLog(staging, updated, "canonical-transaction-log");
+    await syncPublicLog(backing, updated);
+    return clone(nextEntry);
+  });
+  if (merged) Hooks.callAll(HOOKS.LOG_ENTRY_ADDED, clone(merged));
   return merged;
 }
 
 /**
- * GM-only: clear all log entries. Used by the future log UI's Clear button
- * and by step 3 verification cleanup.
+ * Remove full Item recovery snapshots once a transfer reaches a terminal
+ * state. Interrupted operations never call this helper, so their claims keep
+ * enough private data for recovery. All entries for the request are scrubbed
+ * in case an older build copied the snapshot into a failure row too.
+ *
+ * @param {string} requestId
+ * @returns {Promise<number>} number of entries whose snapshots were released
  */
+export async function releaseItemSnapshot(requestId) {
+  if (!isActiveStorageGM() || !requestId) return 0;
+  return withStorageLedgerLock(async () => {
+    if (!isActiveStorageGM()) return 0;
+    const staging = getStagingActor();
+    const backing = getBackingActor();
+    if (!staging || !backing) return 0;
+
+    const snapshotFields = ["itemData", "itemSnapshot", "rawData", "sanitized"];
+    const log = canonicalLog();
+    let released = 0;
+    const updated = log.map(entry => {
+      if (entry.requestId !== requestId) return entry;
+      const next = { ...entry };
+      let changed = false;
+      for (const field of snapshotFields) {
+        if (!(field in next)) continue;
+        delete next[field];
+        changed = true;
+      }
+      if (changed) released += 1;
+      return next;
+    });
+    if (released === 0) return 0;
+
+    await writeVerifiedLog(staging, updated, "canonical-transaction-log");
+    await syncPublicLog(backing, updated);
+    return released;
+  });
+}
+
 export async function clear() {
-  if (!game.user.isGM) {
-    console.warn(`${MODULE_TITLE} | transaction-log.clear called by non-GM; ignoring`);
+  if (!isActiveStorageGM()) {
+    console.warn(`${MODULE_TITLE} | transaction-log.clear called outside the active GM; ignoring`);
     return false;
   }
-  const actor = getBackingActor();
-  if (!actor) return false;
-  await actor.setFlag(MODULE_ID, FLAGS.TRANSACTION_LOG, []);
-  return true;
+  return withStorageLedgerLock(async () => {
+    if (!isActiveStorageGM()) return false;
+    const staging = getStagingActor();
+    const backing = getBackingActor();
+    if (!staging || !backing) return false;
+    await writeVerifiedLog(staging, [], "canonical-transaction-log");
+    await syncPublicLog(backing, []);
+    return true;
+  });
+}
+
+/** Rebuild the shared projection after visibility-setting changes. */
+export async function refreshPublicProjection() {
+  if (!isActiveStorageGM()) return false;
+  return withStorageLedgerLock(async () => {
+    if (!isActiveStorageGM()) return false;
+    const backing = getBackingActor();
+    if (!backing || !getStagingActor()) return false;
+    await syncPublicLog(backing, canonicalLog());
+    return true;
+  });
+}
+
+function canonicalLog() {
+  const staging = getStagingActor();
+  if (staging) return normalizeLog(staging.getFlag(MODULE_ID, FLAGS.TRANSACTION_LOG));
+  // Legacy fallback before storage initialization/migration.
+  const backing = getBackingActor();
+  return normalizeLog(backing?.getFlag?.(MODULE_ID, FLAGS.TRANSACTION_LOG));
+}
+
+async function syncPublicLog(backing, canonical) {
+  const projected = enforceCap(projectPublicTransactionLog(canonical));
+  await writeVerifiedLog(backing, projected, "public-transaction-log-projection");
+}
+
+async function writeVerifiedLog(actor, intended, label) {
+  requireActiveStorageGM();
+  let writeError = null;
+  try {
+    await actor.setFlag(MODULE_ID, FLAGS.TRANSACTION_LOG, clone(intended));
+  } catch (error) {
+    writeError = error;
+  }
+
+  const retained = normalizeLog(actor.getFlag(MODULE_ID, FLAGS.TRANSACTION_LOG));
+  if (!deepEqual(retained, intended)) {
+    if (writeError) throw writeError;
+    throw new Error(`${label}-verification-failed`);
+  }
+  if (writeError) {
+    console.warn(`${MODULE_TITLE} | ${label} committed despite an update error`, writeError);
+  }
+}
+
+function enforceCap(log) {
+  let cap = 0;
+  try {
+    cap = Number(game.settings.get(MODULE_ID, SETTINGS.TRANSACTION_LOG_CAP));
+  } catch { /* setting unavailable during early migration/tests */ }
+  if (Number.isFinite(cap) && cap > 0 && log.length > cap) return log.slice(-cap);
+  return log;
+}
+
+function normalizeLog(value) {
+  return Array.isArray(value) ? clone(value) : [];
+}
+
+function clone(value) {
+  if (globalThis.foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function deepEqual(a, b) {
+  return stableStringify(a) === stableStringify(b);
+}
+
+function stableStringify(value) {
+  if (value == null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(value).sort().map(key =>
+    `${JSON.stringify(key)}:${stableStringify(value[key])}`
+  ).join(",")}}`;
 }

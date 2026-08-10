@@ -20,8 +20,15 @@ export const FLAGS = {
   HIDDEN_CURRENCY: "hiddenCurrency",
   CURRENCY_CONFIG: "currencyConfig",
   LOOT_PREP_FOLDERS: "lootPrepFolders",
+  LOOT_PREP_FOLDER: "lootPrepFolder",
   LOOT_PREP_NOTE: "lootPrepNote",
   BACKING_ACTOR_MARKER: "isQuartermasterBackingActor",
+  STAGING_ACTOR_MARKER: "isQuartermasterStagingActor",
+  STORAGE_SCHEMA_VERSION: "storageSchemaVersion",
+  STORAGE_SYSTEM_ID: "storageSystemId",
+  MIGRATION_STATE: "migrationState",
+  RECOVERY_RECORDS: "recoveryRecords",
+  OPERATION_TOMBSTONES: "operationTombstones",
   INVENTORY_TOKEN_SHORTCUT: "isInventoryTokenShortcut"
 };
 
@@ -66,7 +73,9 @@ export const SETTINGS = {
   LOG_DEFAULT_CATEGORY_FILTER: "logDefaultCategoryFilter",
   LOG_AUTO_EXPAND_GROUPS: "logAutoExpandGroups",
   // Internal (no config UI)
-  BACKING_ACTOR_ID: "backingActorId"
+  BACKING_ACTOR_ID: "backingActorId",
+  STAGING_ACTOR_ID: "stagingActorId",
+  VAULT_ACTOR_TYPE: "vaultActorType"
 };
 
 /**
@@ -112,8 +121,15 @@ export const HOOKS = {
   CURRENCY_CHANGED: "quartermaster.currencyChanged",
   LOOT_REVEALED: "quartermaster.lootRevealed",
   LOG_ENTRY_ADDED: "quartermaster.logEntryAdded",
-  PREFERENCES_CHANGED: "quartermaster.preferencesChanged"
+  PREFERENCES_CHANGED: "quartermaster.preferencesChanged",
+  REGISTER_SYSTEM_ADAPTERS: "quartermaster.registerSystemAdapters"
 };
+
+export const STORAGE_SCHEMA_VERSION = 1;
+export const SYSTEM_ADAPTER_API_VERSION = 2;
+
+/** Maximum tolerated positive client clock skew for authenticated mutations. */
+export const REQUEST_FUTURE_SKEW_MS = 30_000;
 
 /**
  * Per-item permission override values. Mirrors CURRENCY_APPROVAL with an additional

@@ -15,6 +15,7 @@ import { attachResourceButtons } from "../resource-buttons.js";
 import { attachInventoryContextMenu, handleInventoryGMAction } from "../context-menu.js";
 import { promptInventoryPreferences } from "./preferences-dialog.js";
 import { openCurrencyManager } from "./currency-manager-app.js";
+import { getActiveSystemAdapter } from "../system-adapters/registry.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -25,12 +26,15 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
  * Assigns/reassigns qmSortIndex flags on all items.
  */
 async function moveItemInOrder(itemId, direction) {
+  if (!isActiveStorageGM()) return;
   const actor = getBackingActor();
   if (!actor) return;
+  const adapter = getActiveSystemAdapter();
 
   // Get current items sorted by their sortIndex (or name as fallback)
   const items = actor.items
-    .filter(i => !i.getFlag(MODULE_ID, FLAGS.HIDDEN))
+    .filter(i => !i.getFlag(MODULE_ID, FLAGS.HIDDEN)
+      && !adapter.isNativeCurrencyItem?.(i))
     .map(i => ({
       id: i.id,
       name: i.name,
@@ -54,6 +58,7 @@ async function moveItemInOrder(itemId, direction) {
   for (let i = 0; i < items.length; i++) {
     const item = actor.items.get(items[i].id);
     if (item) {
+      requireActiveStorageGM();
       await item.setFlag(MODULE_ID, "sortIndex", (i + 1) * 10);
     }
   }
@@ -242,13 +247,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   static async onCreateItem(event, target) {
-    if (!game.user.isGM) return;
+    if (!isActiveStorageGM()) return;
     const actor = getBackingActor();
     if (!actor) {
       ui.notifications.error(`${MODULE_TITLE}: no backing actor.`);
       return;
     }
-    // Open dnd5e's item creation dialog targeting the backing actor
+    // Open the active system's Item creation dialog on the shared vault.
     const itemTypes = game.documentTypes.Item.filter(t => !["base"].includes(t));
     const typeChoices = {};
     for (const t of itemTypes) {
@@ -335,12 +340,15 @@ function _wireReorderDrag(app) {
 }
 
 async function reorderItem(draggedId, targetId, insertBefore) {
+  if (!isActiveStorageGM()) return;
   const actor = getBackingActor();
   if (!actor) return;
+  const adapter = getActiveSystemAdapter();
 
   // Build current order
   const items = actor.items
-    .filter(i => !i.getFlag(MODULE_ID, FLAGS.HIDDEN))
+    .filter(i => !i.getFlag(MODULE_ID, FLAGS.HIDDEN)
+      && !adapter.isNativeCurrencyItem?.(i))
     .map(i => ({
       id: i.id,
       name: i.name,
@@ -366,6 +374,7 @@ async function reorderItem(draggedId, targetId, insertBefore) {
   for (let i = 0; i < items.length; i++) {
     const item = actor.items.get(items[i].id);
     if (item) {
+      requireActiveStorageGM();
       await item.setFlag(MODULE_ID, "sortIndex", (i + 1) * 10);
     }
   }
@@ -447,3 +456,4 @@ export function registerInventoryRefreshHooks() {
     scheduleInventoryRefresh();
   });
 }
+import { isActiveStorageGM, requireActiveStorageGM } from "../storage-ledger.js";

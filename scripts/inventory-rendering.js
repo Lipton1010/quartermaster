@@ -13,8 +13,7 @@
 import { MODULE_ID, FLAGS, SETTINGS, CHOICES } from "./constants.js";
 import { getRawTotals } from "./weight-cache.js";
 import { getCurrencies, getReferenceCurrency } from "./currencies.js";
-
-const COINS_PER_POUND = 50;  // dnd5e standard
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
 
 /**
  * Build the full rendering context for an inventory popup render.
@@ -24,42 +23,57 @@ const COINS_PER_POUND = 50;  // dnd5e standard
  * @returns {Object}
  */
 export function buildInventoryContext(actor) {
+  const adapter = getActiveSystemAdapter();
   if (!actor) {
     return {
       backingActorPresent: false,
       backingActorName: null,
-      backingActorId: null
+      backingActorId: null,
+      systemAdapter: buildAdapterContext(adapter)
     };
   }
 
-  const settings = readSettings();
+  const settings = readSettings(adapter);
   const currencies = getCurrencies(actor, {
     includeHidden: false,
     hideZero: settings.hideZeroBalances
   }).map(currency => ({ ...currency, type: currency.id }));
+  // Visibility is presentation-only. Hidden balances still exist and must
+  // contribute to load/capacity calculations.
+  const loadCurrencies = settings.applyCurrencyWeight
+    ? getCurrencies(actor, { includeHidden: true, hideZero: false })
+    : currencies;
   const referenceCurrency = getReferenceCurrency(actor);
   const resources = buildResources(actor);
-  const items = buildItems(actor, settings);
+  const items = buildItems(actor, settings, adapter);
 
   // Pull raw visible inventory totals from the cache (computed once and reused
   // until item or currency changes invalidate it via weight-cache hooks).
-  const raw = getRawTotals(actor) ?? { itemWeight: 0, coinSum: 0, coinValues: {} };
+  const raw = getRawTotals(actor) ?? {
+    itemLoad: 0,
+    itemWeight: 0,
+    loadSupported: adapter.capabilities.load === true,
+    loadUnit: adapter.loadUnit ?? null,
+    coinSum: 0,
+    coinValues: {}
+  };
 
   // Settings-derived values are computed at read time so toggling
   // applyCurrencyWeight or capacityLimit doesn't require cache invalidation.
-  const visibleStandardCoinCount = currencies
-    .filter(currency => !currency.isCustom)
-    .reduce((sum, currency) => sum + currency.value, 0);
-  const customCurrencyWeight = currencies
+  const nativeCurrencyLoad = adapter.capabilities.currencyWeight
+    ? adapter.computeNativeCurrencyLoad(loadCurrencies, actor)
+    : 0;
+  const customCurrencyLoad = loadCurrencies
     .filter(currency => currency.isCustom)
     .reduce((sum, currency) => {
       const weightPerUnit = Number(currency.weightPerUnit) || 0;
       return sum + currency.value * weightPerUnit;
     }, 0);
-  const currencyWeight = settings.applyCurrencyWeight
-    ? (visibleStandardCoinCount / COINS_PER_POUND) + customCurrencyWeight
+  const currencyLoad = settings.applyCurrencyWeight && adapter.capabilities.load
+    ? Number(nativeCurrencyLoad || 0) + customCurrencyLoad
     : 0;
-  const totalWeight = raw.itemWeight + currencyWeight;
+  const itemLoad = Number(raw.itemLoad ?? raw.itemWeight) || 0;
+  const totalLoad = itemLoad + currencyLoad;
 
   const gpEquivalent = currencies.reduce((sum, currency) => {
     return sum + (currency.gpRate == null ? 0 : currency.value * currency.gpRate);
@@ -69,12 +83,17 @@ export function buildInventoryContext(actor) {
   }, 0);
 
   // Capacity state
-  const capacity = buildCapacity(totalWeight, settings);
+  const capacity = buildCapacity(totalLoad, settings, adapter);
 
   return {
     backingActorPresent: true,
     backingActorName: actor.name,
     backingActorId: actor.id,
+    systemAdapter: buildAdapterContext(adapter),
+    capabilities: { ...adapter.capabilities },
+    hasLoad: adapter.capabilities.load === true,
+    loadUnit: adapter.loadUnit ?? null,
+    loadUnitLabel: adapter.loadUnit?.label ?? null,
     isGM: game.user.isGM,
     inventoryLabel: settings.inventoryButtonLabel,
     hasBackgroundImage: Boolean(settings.inventoryBackgroundImage),
@@ -90,13 +109,20 @@ export function buildInventoryContext(actor) {
     sortedCustom: settings.sortOrder === CHOICES.SORT_ORDER.CUSTOM,
     itemGroups: settings.sortOrder === CHOICES.SORT_ORDER.BY_TYPE ? groupItemsByType(items) : null,
     totals: {
-      itemWeight: round2(raw.itemWeight),
-      currencyWeight: round2(currencyWeight),
-      totalWeight: round2(totalWeight),
+      itemLoad: round2(itemLoad),
+      currencyLoad: round2(currencyLoad),
+      totalLoad: round2(totalLoad),
+      itemLoadDisplay: adapter.formatLoad(itemLoad),
+      currencyLoadDisplay: adapter.formatLoad(currencyLoad),
+      totalLoadDisplay: adapter.formatLoad(totalLoad),
+      // v0.1 compatibility fields consumed by existing templates/macros.
+      itemWeight: round2(itemLoad),
+      currencyWeight: round2(currencyLoad),
+      totalWeight: round2(totalLoad),
       gpEquivalent: round2(gpEquivalent),
       referenceEquivalent: round2(referenceEquivalent),
-      referenceCurrencyName: referenceCurrency?.name ?? "Gold",
-      referenceCurrencySymbol: referenceCurrency?.symbol ?? "GP",
+      referenceCurrencyName: referenceCurrency?.name ?? "Currency",
+      referenceCurrencySymbol: referenceCurrency?.symbol ?? "CUR",
       applyCurrencyWeight: settings.applyCurrencyWeight
     },
     capacity,
@@ -108,19 +134,34 @@ export function buildInventoryContext(actor) {
   };
 }
 
-function readSettings() {
+function readSettings(adapter) {
+  const supportsLoad = adapter.capabilities.load === true;
+  const configuredCapacity = Boolean(game.settings.get(MODULE_ID, SETTINGS.ENFORCE_CAPACITY));
+  const hasStoredCapacity = hasStoredWorldSetting(SETTINGS.ENFORCE_CAPACITY);
   return {
-    enforceCapacity: game.settings.get(MODULE_ID, SETTINGS.ENFORCE_CAPACITY),
+    enforceCapacity: supportsLoad && (hasStoredCapacity
+      ? configuredCapacity
+      : adapter.defaultCapacity?.enforced === true),
     capacityLimit: game.settings.get(MODULE_ID, SETTINGS.CAPACITY_LIMIT),
-    applyCurrencyWeight: game.settings.get(MODULE_ID, SETTINGS.APPLY_CURRENCY_WEIGHT),
+    applyCurrencyWeight: supportsLoad && adapter.capabilities.currencyWeight === true
+      && Boolean(game.settings.get(MODULE_ID, SETTINGS.APPLY_CURRENCY_WEIGHT)),
     hideZeroBalances: game.settings.get(MODULE_ID, SETTINGS.HIDE_ZERO_BALANCES),
     sortOrder: game.settings.get(MODULE_ID, SETTINGS.SORT_ORDER),
     entrySize: game.settings.get(MODULE_ID, SETTINGS.DEFAULT_ENTRY_SIZE),
     unidentifiedDisplay: game.settings.get(MODULE_ID, SETTINGS.UNIDENTIFIED_DISPLAY),
     inventoryButtonLabel: getInventoryButtonLabel(),
     inventoryBackgroundImage: String(game.settings.get(MODULE_ID, SETTINGS.INVENTORY_BACKGROUND_IMAGE) ?? "").trim(),
-    showItemPrices: game.user.isGM || !game.settings.get(MODULE_ID, SETTINGS.HIDE_PRICES_FROM_PLAYERS)
+    showItemPrices: adapter.capabilities.itemValue === true
+      && (game.user.isGM || !game.settings.get(MODULE_ID, SETTINGS.HIDE_PRICES_FROM_PLAYERS))
   };
+}
+
+function hasStoredWorldSetting(settingKey) {
+  try {
+    return game.settings.storage?.get("world")?.has?.(`${MODULE_ID}.${settingKey}`) === true;
+  } catch {
+    return false;
+  }
 }
 
 export function getInventoryButtonLabel() {
@@ -152,10 +193,11 @@ function buildResources(actor) {
     });
 }
 
-function buildItems(actor, settings) {
+function buildItems(actor, settings, adapter) {
   const items = [...actor.items]
     .filter(i => !i.getFlag(MODULE_ID, FLAGS.HIDDEN))
-    .map(i => prepareItemDisplay(i, settings));
+    .filter(i => !adapter.isNativeCurrencyItem(i))
+    .map(i => prepareItemDisplay(i, settings, adapter));
 
   return sortItems(items, settings.sortOrder);
 }
@@ -163,60 +205,23 @@ function buildItems(actor, settings) {
 /**
  * Compute display-ready fields for one item.
  */
-function prepareItemDisplay(item, settings) {
-  const sys = item.system ?? {};
-  const isIdentified = sys.identified !== false;
-
-  const displayName = resolveDisplayName(item, sys, isIdentified, settings);
-  const weight = resolveWeight(sys);
-  const quantity = sys.quantity ?? 1;
-
-  // Price/value display
-  const priceVal = sys.price?.value ?? 0;
-  const priceDenom = sys.price?.denomination ?? "gp";
-  const priceDisplay = formatItemPrice(priceVal, priceDenom, quantity);
+export function prepareItemDisplay(item, settings, adapter = getActiveSystemAdapter()) {
+  const normalized = adapter.normalizeItem(item, {
+    unidentifiedDisplay: settings.unidentifiedDisplay
+  });
+  const priceDisplay = settings.showItemPrices ? normalized.priceDisplay : null;
 
   return {
-    id: item.id,
-    name: displayName,
-    img: item.img || "icons/svg/item-bag.svg",
-    quantity,
-    weight: round2(weight),
-    totalWeight: round2(weight * quantity),
-    showQuantity: quantity > 1,
-    isIdentified,
-    type: item.type ?? "other",
-    rawName: item.name,
+    ...normalized,
+    // Compatibility fields for the current inventory template. System-aware
+    // templates should use hasLoad/loadDisplay/totalLoad instead.
+    weight: normalized.unitLoad == null ? null : round2(normalized.unitLoad),
+    totalWeight: normalized.totalLoad == null ? null : round2(normalized.totalLoad),
+    hasLoad: normalized.totalLoad != null,
     qmSortIndex: item.getFlag?.(MODULE_ID, "sortIndex") ?? null,
-    priceDisplay: settings.showItemPrices ? priceDisplay : null,
+    priceDisplay,
     hasPrice: settings.showItemPrices && !!priceDisplay
   };
-}
-
-/**
- * Apply the unidentifiedDisplay setting to determine what name to show.
- */
-function resolveDisplayName(item, sys, isIdentified, settings) {
-  if (isIdentified) return item.name;
-
-  switch (settings.unidentifiedDisplay) {
-    case CHOICES.UNIDENTIFIED_DISPLAY.IDENTIFIED:
-      return item.name;
-    case CHOICES.UNIDENTIFIED_DISPLAY.UNIDENTIFIED:
-    case CHOICES.UNIDENTIFIED_DISPLAY.PER_ITEM:
-    default:
-      return sys.unidentified?.name ?? "Unidentified Item";
-  }
-}
-
-/**
- * Weight extraction that survives dnd5e v3 (scalar) and v5 (object) schemas.
- */
-function resolveWeight(sys) {
-  const w = sys.weight;
-  if (typeof w === "number") return w;
-  if (w !== null && typeof w === "object") return w.value ?? 0;
-  return 0;
 }
 
 function sortItems(items, sortOrder) {
@@ -230,13 +235,10 @@ function sortItems(items, sortOrder) {
       });
 
     case CHOICES.SORT_ORDER.CURRENCY_FIRST:
-      // Sort items by a priority tier: loot and consumables first (treasure-like),
-      // then everything else alphabetically. The currency rail and resources are
-      // already rendered above the items section in the template, so this sort
-      // controls item-list ordering only.
+      // Adapters assign system-appropriate treasure/item priority tiers.
       return items.sort((a, b) => {
-        const pa = CURRENCY_FIRST_PRIORITY[a.type] ?? 99;
-        const pb = CURRENCY_FIRST_PRIORITY[b.type] ?? 99;
+        const pa = a.sortPriority ?? 99;
+        const pb = b.sortPriority ?? 99;
         if (pa !== pb) return pa - pb;
         return byName(a, b);
       });
@@ -266,9 +268,7 @@ function groupItemsByType(items) {
   for (const item of items) {
     const type = item.type || "other";
     if (!groups.has(type)) {
-      const label = CONFIG.Item?.typeLabels?.[type]
-        ? game.i18n.localize(CONFIG.Item.typeLabels[type])
-        : type.charAt(0).toUpperCase() + type.slice(1);
+      const label = item.typeLabel || type.charAt(0).toUpperCase() + type.slice(1);
       groups.set(type, { label, type, items: [] });
     }
     groups.get(type).items.push(item);
@@ -276,30 +276,15 @@ function groupItemsByType(items) {
   return Array.from(groups.values());
 }
 
-/**
- * Priority tiers for "Currency First" sort. Lower = higher in the list.
- * Loot and consumables (treasure-like items) sort before equipment and weapons.
- */
-const CURRENCY_FIRST_PRIORITY = {
-  loot:        0,
-  consumable:  1,
-  container:   2,
-  tool:        3,
-  equipment:   4,
-  armor:       5,
-  weapon:      6,
-  feat:        7,
-  spell:       8,
-  class:       9,
-  subclass:    9,
-  background:  9
-};
-
-function buildCapacity(totalWeight, settings) {
-  if (!settings.enforceCapacity) {
+function buildCapacity(totalLoad, settings, adapter) {
+  const supported = adapter.capabilities.load === true;
+  if (!supported || !settings.enforceCapacity) {
     return {
+      supported,
       enforced: false,
-      current: round2(totalWeight),
+      current: round2(totalLoad),
+      currentDisplay: supported ? adapter.formatLoad(totalLoad) : null,
+      unit: adapter.loadUnit ?? null,
       limit: null,
       remaining: null,
       percent: 0,
@@ -308,15 +293,19 @@ function buildCapacity(totalWeight, settings) {
   }
 
   const limit = settings.capacityLimit;
-  const percent = limit > 0 ? Math.min(100, (totalWeight / limit) * 100) : 0;
+  const percent = limit > 0 ? Math.min(100, (totalLoad / limit) * 100) : 0;
 
   return {
+    supported: true,
     enforced: true,
-    current: round2(totalWeight),
+    current: round2(totalLoad),
+    currentDisplay: adapter.formatLoad(totalLoad),
+    unit: adapter.loadUnit ?? null,
     limit,
-    remaining: Math.max(0, round2(limit - totalWeight)),
+    limitDisplay: adapter.formatLoad(limit),
+    remaining: Math.max(0, round2(limit - totalLoad)),
     percent: round2(percent),
-    over: totalWeight > limit
+    over: totalLoad > limit
   };
 }
 
@@ -324,25 +313,13 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
-/**
- * Convert an item's price to a readable display string.
- * Shows total value (price × quantity). Uses GP for values ≥ 1 GP,
- * SP for values ≥ 1 SP, CP otherwise. Never displays as EP.
- */
-const DENOM_TO_CP = { pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 };
-
-function formatItemPrice(priceVal, denom, quantity) {
-  if (!priceVal || priceVal <= 0) return null;
-  const totalCP = priceVal * (DENOM_TO_CP[denom] ?? 100) * quantity;
-  if (totalCP <= 0) return null;
-
-  if (totalCP >= 100) {
-    const gp = totalCP / 100;
-    return Number.isInteger(gp) ? `${gp} GP` : `${round2(gp)} GP`;
-  }
-  if (totalCP >= 10) {
-    const sp = totalCP / 10;
-    return Number.isInteger(sp) ? `${sp} SP` : `${round2(sp)} SP`;
-  }
-  return `${totalCP} CP`;
+function buildAdapterContext(adapter) {
+  return {
+    id: adapter.id,
+    systemId: adapter.systemId === "*" ? (game.system?.id ?? null) : adapter.systemId,
+    label: adapter.label,
+    capabilities: { ...adapter.capabilities },
+    loadUnit: adapter.loadUnit ?? null,
+    nativeCurrencyUnitsPerLoad: adapter.nativeCurrencyUnitsPerLoad ?? null
+  };
 }

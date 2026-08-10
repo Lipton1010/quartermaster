@@ -1,11 +1,11 @@
 {{!--
-  Quartermaster — Shared Party Inventory layout (step 6 read-only render)
+  Quartermaster — system-adapter-aware Shared Party Inventory
 
   Sections, in fixed order:
-    1. Header strip (capacity indicator + gp total)
-    2. Currency rail (5 coin types)
+    1. Header strip (optional load indicator + reference-currency total)
+    2. Currency rail
     3. Custom resources (if any exist)
-    4. Items list (filtered to NOT hidden)
+    4. Visible Items
 
   All interactive controls (drag-drop, +/− buttons, right-click menus) land
   in later steps; this template renders the current state read-only.
@@ -25,25 +25,27 @@
   </div>
   {{/if}}
 
-  {{!-- Header: capacity and total gp --}}
+  {{!-- Header: optional system load and reference-currency total --}}
   <header class="qm-inv-header">
+    {{#if capacity.supported}}
     <div class="qm-inv-capacity{{#if capacity.over}} qm-over-capacity{{/if}}">
       <i class="fa-solid fa-weight-hanging"></i>
       {{#if capacity.enforced}}
         <span class="qm-capacity-text">
-          {{capacity.current}} / {{capacity.limit}} lbs
+          {{capacity.currentDisplay}} / {{capacity.limitDisplay}}
         </span>
         <span class="qm-capacity-bar" aria-hidden="true">
           <span class="qm-capacity-fill" style="width: {{capacity.percent}}%"></span>
         </span>
       {{else}}
         <span class="qm-capacity-text">
-          {{capacity.current}} lbs (unlimited)
+          {{capacity.currentDisplay}} (not enforced)
         </span>
       {{/if}}
     </div>
+    {{/if}}
 
-    <div class="qm-inv-total-gp" title="Total currency value in {{totals.referenceCurrencyName}} equivalent">
+    <div class="qm-inv-total-value" title="Total currency value in {{totals.referenceCurrencyName}} equivalent">
       <i class="fa-solid fa-coins"></i>
       {{totals.referenceEquivalent}} {{totals.referenceCurrencySymbol}}
     </div>
@@ -125,7 +127,7 @@
       <select class="qm-sort-select" name="sortOrder" title="Sort items by">
         <option value="alphabetical" {{#if settings.sortAlpha}}selected{{/if}}>A–Z</option>
         <option value="byType" {{#if sortedByType}}selected{{/if}}>By Type</option>
-        <option value="currencyFirst" {{#if settings.sortCurrFirst}}selected{{/if}}>Loot First</option>
+        <option value="currencyFirst" {{#if settings.sortCurrFirst}}selected{{/if}}>System Priority</option>
         <option value="custom" {{#if sortedCustom}}selected{{/if}}>Manual</option>
       </select>
       {{#if isGM}}
@@ -147,7 +149,7 @@
               <span class="qm-type-count">({{this.items.length}})</span>
             </li>
             {{#each this.items}}
-              <li class="qm-item-row {{#unless this.isIdentified}}qm-unidentified{{/unless}}"
+              <li class="qm-item-row{{#if this.supportsIdentification}}{{#unless this.isIdentified}} qm-unidentified{{/unless}}{{/if}}"
                   data-item-id="{{this.id}}"
                   data-item-type="{{this.type}}">
                 <img src="{{this.img}}" alt="" class="qm-item-icon" draggable="false" />
@@ -156,7 +158,7 @@
                   {{#if this.showQuantity}}×{{this.quantity}}{{/if}}
                 </span>
                 <div class="qm-item-meta">
-                  <span class="qm-item-weight">{{this.totalWeight}} lb</span>
+                  {{#if this.hasLoad}}<span class="qm-item-load">{{this.loadDisplay}}</span>{{/if}}
                   {{#if this.hasPrice}}<span class="qm-item-price">{{this.priceDisplay}}</span>{{/if}}
                 </div>
                 {{#if @root.isGM}}
@@ -174,7 +176,7 @@
           {{/each}}
         {{else}}
           {{#each items}}
-            <li class="qm-item-row {{#unless this.isIdentified}}qm-unidentified{{/unless}}"
+            <li class="qm-item-row{{#if this.supportsIdentification}}{{#unless this.isIdentified}} qm-unidentified{{/unless}}{{/if}}"
                 data-item-id="{{this.id}}"
                 data-item-type="{{this.type}}">
               <img src="{{this.img}}" alt="" class="qm-item-icon" draggable="false" />
@@ -183,7 +185,7 @@
                 {{#if this.showQuantity}}×{{this.quantity}}{{/if}}
               </span>
               <div class="qm-item-meta">
-                <span class="qm-item-weight">{{this.totalWeight}} lb</span>
+                {{#if this.hasLoad}}<span class="qm-item-load">{{this.loadDisplay}}</span>{{/if}}
                 {{#if this.hasPrice}}<span class="qm-item-price">{{this.priceDisplay}}</span>{{/if}}
               </div>
 {{#if ../sortedCustom}}

@@ -21,21 +21,13 @@ import { getTimeoutConfig } from "./approval-policy.js";
 
 const { DialogV2 } = foundry.applications.api;
 
-const CURRENCY_NAMES = {
-  pp: "Platinum Pieces",
-  gp: "Gold Pieces",
-  ep: "Electrum Pieces",
-  sp: "Silver Pieces",
-  cp: "Copper Pieces"
-};
-
 /**
  * Show the approval dialog and resolve with the GM's decision.
  *
  * @param {Object} request
  * @param {string} request.requestId
  * @param {string} request.userId        - originating user
- * @param {string} request.currencyType  - pp | gp | ep | sp | cp
+ * @param {string} request.currencyType  - adapter/native or custom currency ID
  * @param {number} request.delta         - signed delta
  * @param {number} request.currentBalance
  * @param {string} [request.reason]
@@ -55,7 +47,7 @@ export async function promptCurrencyApproval(request) {
   const userName = game.users?.get?.(userId)?.name ?? "(unknown user)";
   const symbol = currencySymbol || currencyType.toUpperCase();
   const safeSymbol = escapeHtml(symbol);
-  const fullName = currencyName || CURRENCY_NAMES[currencyType] || symbol;
+  const fullName = currencyName || symbol;
   const verb = delta > 0 ? "add" : "remove";
   const preposition = delta > 0 ? "to" : "from";
   const abs = Math.abs(delta);

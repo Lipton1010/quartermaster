@@ -15,6 +15,8 @@ import {
   setReferenceCurrency,
   deleteCustomCurrency
 } from "../currencies.js";
+import { getActiveSystemAdapter } from "../system-adapters/registry.js";
+import { isActiveStorageGM } from "../storage-ledger.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
@@ -47,6 +49,8 @@ export class CurrencyManagerApp extends HandlebarsApplicationMixin(ApplicationV2
 
   async _prepareContext() {
     const actor = getBackingActor();
+    const adapter = getActiveSystemAdapter();
+    const loadSupported = adapter.capabilities?.load === true && Boolean(adapter.loadUnit?.label);
     const allCurrencies = getCurrencies(actor, { includeHidden: true });
     const referenceCurrency = getReferenceCurrency(actor);
     const currencies = allCurrencies.map(currency => ({
@@ -56,9 +60,8 @@ export class CurrencyManagerApp extends HandlebarsApplicationMixin(ApplicationV2
       visibilityIcon: currency.hidden ? "fa-solid fa-eye" : "fa-solid fa-eye-slash",
       visibilityActionLabel: currency.hidden ? "Show" : "Hide",
       conversionLabel: formatConversion(currency, referenceCurrency),
-      weightLabel: currency.isCustom
-        ? currency.weightPerUnit > 0 ? `${currency.weightPerUnit} lb each` : "Weightless"
-        : "50 coins per lb",
+      weightLabel: loadSupported ? formatCurrencyLoad(currency, adapter) : null,
+      hasWeightLabel: loadSupported && Boolean(formatCurrencyLoad(currency, adapter)),
       canHide: !currency.isReference,
       canDelete: currency.isCustom && !currency.isReference
     }));
@@ -67,6 +70,7 @@ export class CurrencyManagerApp extends HandlebarsApplicationMixin(ApplicationV2
       backingActorPresent: Boolean(actor),
       currencies,
       hasCurrencies: currencies.length > 0,
+      loadSupported,
       referenceCurrency,
       referenceOptions: allCurrencies.map(currency => ({
         ...currency,
@@ -96,19 +100,19 @@ export class CurrencyManagerApp extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   static async onAddCurrency() {
-    if (!game.user.isGM) return;
+    if (!isActiveStorageGM()) return;
     const saved = await promptCurrencyEdit();
     if (saved) this.render();
   }
 
   static async onEditCurrency(event, target) {
-    if (!game.user.isGM) return;
+    if (!isActiveStorageGM()) return;
     const saved = await promptCurrencyEdit(target.dataset.currencyId);
     if (saved) this.render();
   }
 
   static async onToggleCurrency(event, target) {
-    if (!game.user.isGM) return;
+    if (!isActiveStorageGM()) return;
     const currency = getCurrency(target.dataset.currencyId);
     if (!currency) return;
     const result = await setCurrencyHidden(currency.id, !currency.hidden);
@@ -117,7 +121,7 @@ export class CurrencyManagerApp extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   static async onDeleteCurrency(event, target) {
-    if (!game.user.isGM) return;
+    if (!isActiveStorageGM()) return;
     const currency = getCurrency(target.dataset.currencyId);
     if (!currency?.isCustom) return;
 
@@ -144,7 +148,7 @@ export class CurrencyManagerApp extends HandlebarsApplicationMixin(ApplicationV2
 let _instance = null;
 
 export async function openCurrencyManager() {
-  if (!game.user.isGM) {
+  if (!isActiveStorageGM()) {
     ui.notifications.warn(`${MODULE_TITLE}: only a GM can manage currencies.`);
     return null;
   }
@@ -153,14 +157,23 @@ export async function openCurrencyManager() {
   return _instance;
 }
 
+export async function closeCurrencyManager() {
+  if (!_instance) return;
+  const instance = _instance;
+  _instance = null;
+  await instance.close();
+}
+
 export async function openCurrencyEditor(currencyId) {
-  if (!game.user.isGM) return false;
+  if (!isActiveStorageGM()) return false;
   const saved = await promptCurrencyEdit(currencyId);
   if (saved && _instance?.element?.isConnected) _instance.render();
   return saved;
 }
 
 async function promptCurrencyEdit(currencyId = null) {
+  const adapter = getActiveSystemAdapter();
+  const loadSupported = adapter.capabilities?.load === true && Boolean(adapter.loadUnit?.label);
   const currency = currencyId ? getCurrency(currencyId) : null;
   if (currencyId && !currency) {
     ui.notifications.warn(`${MODULE_TITLE}: currency not found.`);
@@ -183,6 +196,15 @@ async function promptCurrencyEdit(currencyId = null) {
     weightPerUnit: 0
   };
 
+  const loadField = loadSupported ? `
+    <div class="form-group">
+      <label for="qm-cur-weight">Load per Unit (${escapeHtml(adapter.loadUnit.label)})</label>
+      <input type="number" id="qm-cur-weight" name="weightPerUnit" value="${initial.weightPerUnit ?? 0}"
+             min="0" step="any" placeholder="0" />
+      <p class="hint">Optional. Use 0 for no load. Applied only when currency load is enabled.</p>
+    </div>
+  ` : "";
+
   const customFields = isStandard ? "" : `
     <div class="form-group">
       <label for="qm-cur-name">Name</label>
@@ -200,12 +222,7 @@ async function promptCurrencyEdit(currencyId = null) {
       <input type="number" id="qm-cur-value" name="value" value="${initial.value}"
              min="0" step="any" />
     </div>
-    <div class="form-group">
-      <label for="qm-cur-weight">Weight per Unit (lb)</label>
-      <input type="number" id="qm-cur-weight" name="weightPerUnit" value="${initial.weightPerUnit ?? 0}"
-             min="0" step="any" placeholder="0" />
-      <p class="hint">Optional. Use 0 for weightless. Applied only when Currency Counts Toward Weight is enabled.</p>
-    </div>
+    ${loadField}
   `;
 
   const conversionFields = isReference ? `
@@ -223,10 +240,10 @@ async function promptCurrencyEdit(currencyId = null) {
         <span>1 ${escapeHtml(initial.symbol || "custom unit")} equals</span>
         <input type="number" name="referenceRate" value="${initial.referenceRate ?? ""}"
                min="0.000000000001" step="any" placeholder="${isStandard ? "Rate" : "No conversion"}" />
-        <strong>${escapeHtml(referenceCurrency?.symbol ?? "GP")}</strong>
+        <strong>${escapeHtml(referenceCurrency?.symbol ?? "CUR")}</strong>
       </div>
       <p class="hint">${isStandard
-        ? `Enter this currency's value in ${escapeHtml(referenceCurrency?.name ?? "Gold")}.`
+        ? `Enter this currency's value in ${escapeHtml(referenceCurrency?.name ?? "Currency")}.`
         : `Leave blank to exclude this currency from equivalent totals and approval-threshold calculations.`}</p>
     </fieldset>
   `;
@@ -322,8 +339,11 @@ function readCurrencyForm(root, initial, isStandard, isReference) {
   const name = root.querySelector("[name='name']")?.value?.trim() ?? "";
   const symbol = root.querySelector("[name='symbol']")?.value?.trim() ?? "";
   const value = Number(root.querySelector("[name='value']")?.value ?? 0);
-  const weightRaw = root.querySelector("[name='weightPerUnit']")?.value ?? "";
-  const weightPerUnit = weightRaw === "" ? 0 : Number(weightRaw);
+  const weightInput = root.querySelector("[name='weightPerUnit']");
+  const weightRaw = weightInput?.value ?? "";
+  const weightPerUnit = weightInput
+    ? weightRaw === "" ? 0 : Number(weightRaw)
+    : Number(initial.weightPerUnit ?? 0);
 
   if (!name || !symbol) {
     ui.notifications.warn(`${MODULE_TITLE}: currency name and short label are required.`);
@@ -389,7 +409,21 @@ function notifyFailure(result) {
 function formatConversion(currency, referenceCurrency) {
   if (currency.isReference) return `Reference: 1 ${currency.symbol} = 1 ${currency.symbol}`;
   if (currency.referenceRate == null) return "No conversion";
-  return `1 ${currency.symbol} = ${currency.referenceRate} ${referenceCurrency?.symbol ?? "GP"}`;
+  return `1 ${currency.symbol} = ${currency.referenceRate} ${referenceCurrency?.symbol ?? "CUR"}`;
+}
+
+function formatCurrencyLoad(currency, adapter) {
+  const unit = adapter.loadUnit?.label;
+  if (!unit) return null;
+  if (currency.isCustom) {
+    return currency.weightPerUnit > 0
+      ? `${currency.weightPerUnit} ${unit} each`
+      : "No load";
+  }
+  const units = Number(adapter.nativeCurrencyUnitsPerLoad);
+  return Number.isFinite(units) && units > 0
+    ? `${units.toLocaleString()} coins per ${unit}`
+    : null;
 }
 
 function escapeHtml(value) {

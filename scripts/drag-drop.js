@@ -2,13 +2,13 @@
  * Quartermaster — Drag-Drop Wiring
  *
  * Connects user interactions (drag, drop) on the inventory popup and on
- * character sheets to the Claim-and-Commit transfer engine via the socket
+ * Actor sheets to the Claim-and-Commit transfer engine via the authenticated
  * pipeline.
  *
  * Two flows:
  *
  *   INGRESS — drop on popup
- *     1. User drags item from a character sheet
+ *     1. User drags item from an Actor sheet
  *     2. Drop fires on the popup's items container
  *     3. We extract `data.uuid` from the standard Foundry drag payload
  *     4. Submit `{ action: "ingress" }` through socketHandler.submitRequest
@@ -17,7 +17,7 @@
  *   EGRESS — drag from popup
  *     1. User starts drag on a popup item row
  *     2. We set Foundry-standard drag data PLUS our `qmEgressDrag` marker
- *     3. Foundry's drop handler fires on the receiving character sheet,
+ *     3. Foundry's drop handler fires on the receiving Actor sheet,
  *        but our `dropActorSheetData` hook intercepts (returns false)
  *     4. We submit `{ action: "egress" }` through submitRequest
  *
@@ -34,11 +34,17 @@ import { PAYLOAD_TYPES, submitRequest } from "./socket-handler.js";
 import { getBackingActor } from "./backing-actor.js";
 import { sanitizeItemForTransfer } from "./sanitization.js";
 import { writeEntry } from "./transaction-log.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
+import {
+  actorOwnedBy,
+  isQuartermasterStorageActor,
+  sameDocument
+} from "./transfer-authorization.js";
 
 /**
  * Marker added to drag data when items are dragged FROM the popup. The
  * egress drop interceptor checks for this to decide whether to handle
- * the drop or let Foundry/dnd5e handle it normally.
+ * the drop or let Foundry/the active system handle it normally.
  */
 const QM_EGRESS_MARKER = "qmEgressDrag";
 
@@ -144,7 +150,7 @@ async function onPopupDrop(event, app) {
     return;
   }
 
-  const sourceItem = await fromUuid(data.uuid);
+  const sourceItem = await resolveUuid(data.uuid);
   if (!sourceItem) {
     ui.notifications.warn(`${MODULE_TITLE}: dropped item could not be resolved.`);
     return;
@@ -160,16 +166,20 @@ async function onPopupDrop(event, app) {
   // Reveal it (clear hidden flag) so it appears in the inventory.
   if (data[QM_LOOTPREP_DRAG_MARKER]) {
     if (!game.user.isGM) return;
-    if (sourceItem.parent?.id === backingActor.id) {
+    if (isQuartermasterStorageActor(sourceItem.parent)) {
       const { setItemHidden } = await import("./hidden-items.js");
-      await setItemHidden(sourceItem.id, false);
+      const revealed = await setItemHidden(sourceItem.id, false);
+      if (!revealed) {
+        ui.notifications.error(`${MODULE_TITLE}: failed to reveal item.`);
+        return;
+      }
       ui.notifications.info(`"${sourceItem.name}" revealed to the party.`);
       // Write a log entry
       await writeEntry({
         type: "hidden.revealed",
         requestId: `qm-reveal-drag-${sourceItem.id}-${Date.now()}`,
         userId: game.user.id,
-        itemId: sourceItem.id,
+        itemId: revealed.id,
         itemName: sourceItem.name,
         backingActorId: backingActor.id
       });
@@ -190,7 +200,7 @@ async function onPopupDrop(event, app) {
   }
 
   // Self-drop: item is already on the backing actor
-  if (sourceItem.parent.id === backingActor.id) {
+  if (sameDocument(sourceItem.parent, backingActor)) {
     return;
   }
 
@@ -220,8 +230,8 @@ function onItemRowDragStart(event) {
     qmSourceItemName: item.name
   };
   event.dataTransfer.setData("text/plain", JSON.stringify(payload));
-  // Use "all" instead of "move": "move" excludes "copy", and dnd5e
-  // character sheets default to dropEffect "copy" for item drags. With
+  // Use "all" instead of "move": "move" excludes "copy", and many Actor
+  // sheets default to dropEffect "copy" for item drags. With
   // incompatible effectAllowed/dropEffect, the browser shows the no-drop
   // cursor and the drop event never fires. "all" matches any dropEffect.
   event.dataTransfer.effectAllowed = "all";
@@ -240,12 +250,12 @@ function onItemRowDragEnd(event) {
 }
 
 // ============================================================
-// Egress interception on character sheets
+// Egress interception on Actor sheets
 // ============================================================
 
 /**
- * Register the dropActorSheetData hook to intercept egress drops on
- * character sheets. Called once at module ready.
+ * Register the dropActorSheetData hook to intercept egress drops on Actor
+ * sheets. Called once at module ready.
  *
  * The hook fires on every drop event on every actor sheet. We check for
  * our marker, intercept if present, and return false to stop Foundry's
@@ -265,7 +275,7 @@ export function registerEgressInterceptor() {
       }
     );
 
-    // Handle loot prep drags to character sheets: reveal then egress
+    // Handle private Loot Prep drags directly to Actor sheets.
     if (data?.[QM_LOOTPREP_DRAG_MARKER]) {
       handleLootPrepToSheetDrop(destActor, data).catch((err) => {
         console.error(`${MODULE_TITLE} | Loot prep to sheet drop failed`, err);
@@ -293,7 +303,7 @@ async function handleEgressDrop(destActor, data) {
     return;
   }
 
-  const sourceItem = await fromUuid(data.qmSourceItemUuid);
+  const sourceItem = await resolveUuid(data.qmSourceItemUuid);
   if (!sourceItem) {
     ui.notifications.warn(
       `${MODULE_TITLE}: source item no longer exists in the vault.`
@@ -303,13 +313,13 @@ async function handleEgressDrop(destActor, data) {
 
   // Sanity: source is the backing actor, dest is not
   const backingActor = getBackingActor();
-  if (sourceItem.parent?.id !== backingActor?.id) {
+  if (!sameDocument(sourceItem.parent, backingActor)) {
     ui.notifications.warn(
       `${MODULE_TITLE}: source item is not in the vault.`
     );
     return;
   }
-  if (destActor.id === backingActor.id) {
+  if (sameDocument(destActor, backingActor)) {
     return; // dropped back on the vault — no-op
   }
 
@@ -331,10 +341,10 @@ export async function transferInventoryItemToActor(itemId, destActor) {
     return null;
   }
   if (!destActor) {
-    ui.notifications.warn(`${MODULE_TITLE}: no character selected.`);
+    ui.notifications.warn(`${MODULE_TITLE}: no destination actor selected.`);
     return null;
   }
-  if (destActor.id === backingActor.id) {
+  if (sameDocument(destActor, backingActor)) {
     return null;
   }
 
@@ -354,24 +364,20 @@ async function handleLootPrepToSheetDrop(destActor, data) {
   }
   if (!game.user.isGM) return;
 
-  const sourceItem = await fromUuid(data.qmSourceItemUuid);
+  const sourceItem = await resolveUuid(data.qmSourceItemUuid);
   if (!sourceItem) {
     ui.notifications.warn(`${MODULE_TITLE}: source item no longer exists.`);
     return;
   }
 
-  const backingActor = getBackingActor();
-  if (sourceItem.parent?.id !== backingActor?.id) {
-    ui.notifications.warn(`${MODULE_TITLE}: source item is not in the vault.`);
+  if (!isQuartermasterStorageActor(sourceItem.parent)) {
+    ui.notifications.warn(`${MODULE_TITLE}: source item is not in Quartermaster storage.`);
     return;
   }
-  if (destActor.id === backingActor.id) return; // dropped back on vault — no-op
+  if (isQuartermasterStorageActor(destActor)) return;
 
-  // Step 1: Reveal the item (clear hidden flag)
-  const { setItemHidden } = await import("./hidden-items.js");
-  await setItemHidden(sourceItem.id, false);
-
-  // Step 2: Now process as a normal egress
+  // GM-only direct egress from private staging. Do not reveal the item into
+  // the player-readable vault as an intermediate step.
   await submitEgressRequest({ sourceItem, destActor });
 }
 
@@ -380,6 +386,12 @@ async function handleLootPrepToSheetDrop(destActor, data) {
 // ============================================================
 
 async function submitIngressRequest({ sourceItem, destActor }) {
+  const preflight = preflightClientTransfer("ingress", sourceItem, destActor);
+  if (!preflight.ok) {
+    const result = { status: "failed", error: preflight.error };
+    notifyTransferResult(result, sourceItem?.name ?? "Item", "ingress", destActor?.name ?? "vault");
+    return result;
+  }
   const requestId = `qm-${foundry.utils.randomID()}`;
 
   const result = await submitRequest({
@@ -396,6 +408,12 @@ async function submitIngressRequest({ sourceItem, destActor }) {
 }
 
 async function submitEgressRequest({ sourceItem, destActor }) {
+  const preflight = preflightClientTransfer("egress", sourceItem, destActor);
+  if (!preflight.ok) {
+    const result = { status: "failed", error: preflight.error };
+    notifyTransferResult(result, sourceItem?.name ?? "Item", "egress", destActor?.name ?? "actor");
+    return result;
+  }
   const requestId = `qm-${foundry.utils.randomID()}`;
 
   const result = await submitRequest({
@@ -413,13 +431,57 @@ async function submitEgressRequest({ sourceItem, destActor }) {
 
 function buildTransferPayload(sourceItem, destActor) {
   return {
+    sourceActorUuid: sourceItem.parent.uuid,
     sourceActorId: sourceItem.parent.id,
     sourceItemId: sourceItem.id,
     sourceItemUuid: sourceItem.uuid,
     sourceItemName: sourceItem.name,
+    destActorUuid: destActor.uuid,
     destActorId: destActor.id,
     destActorName: destActor.name
   };
+}
+
+function preflightClientTransfer(action, sourceItem, destActor) {
+  const sourceActor = sourceItem?.parent;
+  if (!sourceItem || !sourceActor || !destActor) {
+    return { ok: false, error: "missing-transfer-document" };
+  }
+
+  if (!game.user.isGM) {
+    const ownedActor = action === "ingress" ? sourceActor : destActor;
+    if (!actorOwnedBy(ownedActor, game.user)) {
+      return {
+        ok: false,
+        error: action === "ingress"
+          ? "source-actor-not-owned"
+          : "destination-actor-not-owned"
+      };
+    }
+  }
+
+  const adapter = getActiveSystemAdapter();
+  try {
+    const sourceRole = action === "ingress" ? "source" : "vault";
+    const destRole = action === "ingress" ? "vault" : "recipient";
+    if (typeof adapter?.isCompatibleActor === "function"
+        && !adapter.isCompatibleActor(sourceActor, { role: sourceRole })) {
+      return { ok: false, error: "incompatible-source-actor" };
+    }
+    if (typeof adapter?.isCompatibleActor === "function"
+        && !adapter.isCompatibleActor(destActor, { role: destRole })) {
+      return { ok: false, error: "incompatible-destination-actor" };
+    }
+    if (typeof adapter?.canReceiveItem === "function"
+        && !adapter.canReceiveItem(sourceItem, destActor)) {
+      return { ok: false, error: "incompatible-destination-item" };
+    }
+  } catch (err) {
+    console.warn(`${MODULE_TITLE} | client transfer preflight failed`, err);
+    return { ok: false, error: "adapter-preflight-failed" };
+  }
+
+  return { ok: true };
 }
 
 function notifyTransferResult(result, itemName, action, destName) {
@@ -429,7 +491,7 @@ function notifyTransferResult(result, itemName, action, destName) {
   }
   if (result.status === "success") {
     // For ingress, destName is the vault and "added to" reads correctly.
-    // For egress, destName is the receiving character; "given to" makes
+    // For egress, destName is the receiving Actor; "given to" makes
     // the direction clear without needing to reference the source name.
     const msg = action === "ingress"
       ? `${itemName} added to ${destName}.`
@@ -468,9 +530,21 @@ export async function importCompendiumItem(sourceItem, backingActor, opts = {}) 
   }
 
   try {
+    const adapter = getActiveSystemAdapter();
+    if (typeof adapter?.isCompatibleActor === "function"
+        && !adapter.isCompatibleActor(backingActor, { role: "vault" })) {
+      return { status: "failed", error: "incompatible-destination-actor" };
+    }
+    if (typeof adapter?.canReceiveItem === "function"
+        && !adapter.canReceiveItem(sourceItem, backingActor)) {
+      return { status: "failed", error: "incompatible-destination-item" };
+    }
     const rawData = sourceItem.toObject();
     const sanitized = sanitizeItemForTransfer(rawData, backingActor, {
-      sourceItemUuid: sourceItem.uuid
+      sourceItem,
+      sourceItemUuid: sourceItem.uuid,
+      preserveHiddenFlag: hidden,
+      adapter
     });
 
     // Merge flags: hidden if staging, plus preserve any existing sanitized flags
@@ -481,6 +555,7 @@ export async function importCompendiumItem(sourceItem, backingActor, opts = {}) 
     );
     const itemData = { ...sanitized, flags };
 
+    requireActiveStorageGM();
     const [created] = await backingActor.createEmbeddedDocuments("Item", [itemData], {
       keepId: true
     });
@@ -520,7 +595,7 @@ export async function importCompendiumItem(sourceItem, backingActor, opts = {}) 
  * Parse drag data from a drop event. Tries text/plain first, falls back
  * to other common formats. Returns null on parse failure.
  *
- * In some Foundry/dnd5e drag flows the data may have been set with a
+ * In some Foundry/system drag flows the data may have been set with a
  * different MIME type or as raw JSON. We try the common variants in
  * order.
  */
@@ -540,3 +615,13 @@ function parseDropData(event) {
   }
   return null;
 }
+
+async function resolveUuid(uuid) {
+  if (typeof uuid !== "string" || !uuid) return null;
+  try {
+    return await globalThis.fromUuid?.(uuid) ?? null;
+  } catch {
+    return null;
+  }
+}
+import { requireActiveStorageGM } from "./storage-ledger.js";

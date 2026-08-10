@@ -10,8 +10,8 @@
  *   - Double-click items to open sheet
  */
 
-import { MODULE_ID, MODULE_TITLE, FLAGS } from "../constants.js";
-import { getBackingActor } from "../backing-actor.js";
+import { FLAGS, MODULE_ID, MODULE_TITLE, SETTINGS } from "../constants.js";
+import { getBackingActor, getStagingActor } from "../backing-actor.js";
 import {
   getResources, getResource, createResource, updateResource, deleteResource,
   DEFAULT_RESOURCE_ICON
@@ -36,6 +36,7 @@ import { QM_REHIDE_MARKER, QM_LOOTPREP_DRAG_MARKER } from "../drag-drop.js";
 import { writeEntry } from "../transaction-log.js";
 import { getCurrencies, getCurrency } from "../currencies.js";
 import { openCurrencyManager } from "./currency-manager-app.js";
+import { getActiveSystemAdapter } from "../system-adapters/registry.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
@@ -43,22 +44,6 @@ function escapeHtml(s) {
   if (typeof s !== "string") return "";
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-}
-
-const _DENOM_TO_CP = { pp: 1000, gp: 100, ep: 50, sp: 10, cp: 1 };
-function _formatPrice(val, denom, qty) {
-  if (!val || val <= 0) return null;
-  const totalCP = val * (_DENOM_TO_CP[denom] ?? 100) * (qty || 1);
-  if (totalCP <= 0) return null;
-  if (totalCP >= 100) {
-    const gp = totalCP / 100;
-    return Number.isInteger(gp) ? `${gp} GP` : `${(Math.round(gp * 100) / 100)} GP`;
-  }
-  if (totalCP >= 10) {
-    const sp = totalCP / 10;
-    return Number.isInteger(sp) ? `${sp} SP` : `${(Math.round(sp * 100) / 100)} SP`;
-  }
-  return `${totalCP} CP`;
 }
 
 export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -108,30 +93,25 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   async _prepareContext(options) {
-    const actor = getBackingActor();
+    const backing = getBackingActor();
+    const staging = getStagingActor();
+    const adapter = getActiveSystemAdapter();
     const resources = getResources();
-    const hiddenItemDocs = actor ? getHiddenItems(actor) : [];
-    const hiddenCurrencyEntries = actor ? getHiddenCurrency(actor) : [];
-    const folders = actor ? getFolders(actor) : [];
+    const hiddenItemDocs = staging ? getHiddenItems(staging) : [];
+    const hiddenCurrencyEntries = staging ? getHiddenCurrency(staging) : [];
+    const folders = staging ? getFolders(staging) : [];
     const foldersById = new Map(folders.map(folder => [folder.id, folder]));
+    const unidentifiedDisplay = game.settings.get(MODULE_ID, SETTINGS.UNIDENTIFIED_DISPLAY);
 
     const hiddenItems = hiddenItemDocs.map(item => {
-      const sys = item.system ?? {};
-      const qty = sys.quantity ?? 1;
-      const rawWeight = sys.weight?.value ?? sys.weight ?? 0;
-      const weight = typeof rawWeight === "number"
-        ? (rawWeight * qty).toFixed(2).replace(/\.?0+$/, "") : "—";
-      const sourceUuid = item.flags?.core?.sourceId ?? item.flags?.dnd5e?.sourceId ?? null;
-      const sourcePack = sourceUuid
-        ? sourceUuid.replace(/^Compendium\./, "").split(".").slice(0, 2).join(".") : null;
-      const priceDisplay = _formatPrice(sys.price?.value, sys.price?.denomination, qty);
-      const folderId = item.getFlag(MODULE_ID, "lootPrepFolder") ?? null;
+      const normalized = adapter.normalizeItem(item, { unidentifiedDisplay });
+      const folderId = item.getFlag(MODULE_ID, FLAGS.LOOT_PREP_FOLDER) ?? null;
       const effectiveNote = getEffectiveItemNote(item, foldersById.get(folderId));
       return {
-        id: item.id, name: item.name ?? "(unnamed)",
-        img: item.img ?? "icons/svg/item-bag.svg",
-        qty, weight, sourcePack, priceDisplay,
-        hasPrice: !!priceDisplay,
+        ...normalized,
+        id: item.id,
+        hasLoad: normalized.loadDisplay != null,
+        hasPrice: adapter.capabilities.itemValue === true && !!normalized.priceDisplay,
         folderId,
         note: effectiveNote.note,
         hasNote: !!effectiveNote.note,
@@ -143,7 +123,7 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const currencyEntries = hiddenCurrencyEntries.map(e => {
       const currencyId = e.currencyId ?? e.type;
-      const currency = getCurrency(currencyId, actor);
+      const currency = getCurrency(currencyId, backing);
       const symbol = currency?.symbol ?? e.currencySymbol ?? String(currencyId).toUpperCase();
       return {
         id: e.id,
@@ -176,9 +156,18 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return {
       moduleVersion: game.modules.get(MODULE_ID)?.version ?? "unknown",
       isGM: game.user.isGM,
-      backingActorPresent: !!actor,
-      backingActorName: actor?.name ?? null,
-      backingActorId: actor?.id ?? null,
+      backingActorPresent: !!backing,
+      backingActorName: backing?.name ?? null,
+      backingActorId: backing?.id ?? null,
+      stagingActorPresent: !!staging,
+      stagingActorName: staging?.name ?? null,
+      stagingActorId: staging?.id ?? null,
+      systemAdapter: {
+        id: adapter.id,
+        label: adapter.label,
+        capabilities: { ...adapter.capabilities }
+      },
+      capabilities: { ...adapter.capabilities },
       resources: resources.map(r => ({
         ...r,
         hasMax: r.max != null,
@@ -347,9 +336,9 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async onRevealAll(event, target) {
     if (!game.user.isGM) return;
-    const actor = getBackingActor();
-    const hidden = actor ? getHiddenItems(actor) : [];
-    const hiddenCurr = actor ? getHiddenCurrency(actor) : [];
+    const staging = getStagingActor();
+    const hidden = staging ? getHiddenItems(staging) : [];
+    const hiddenCurr = staging ? getHiddenCurrency(staging) : [];
     const total = hidden.length + hiddenCurr.length;
     if (total === 0) { ui.notifications.info(`${MODULE_TITLE}: nothing to reveal.`); return; }
     const confirmed = await DialogV2.confirm({
@@ -418,8 +407,8 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!game.user.isGM) return;
     const folderId = target.dataset.folderId;
     if (!folderId) return;
-    const actor = getBackingActor();
-    const folder = getFolders(actor).find(f => f.id === folderId);
+    const staging = getStagingActor();
+    const folder = getFolders(staging).find(f => f.id === folderId);
     if (!folder) { this.render(); return; }
     const result = await _promptFolderName("Rename Folder", folder.name);
     if (result) {
@@ -462,12 +451,13 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
 // ============================================================
 
 async function _promptCurrencyLoot(folderId) {
-  const currencies = getCurrencies(undefined, { includeHidden: true });
+  const currencies = getCurrencies(getBackingActor(), { includeHidden: true });
   if (currencies.length === 0) {
     ui.notifications.warn(`${MODULE_TITLE}: no currencies are configured.`);
     return false;
   }
-  const defaultId = currencies.find(currency => currency.id === "gp")?.id ?? currencies[0].id;
+  const preferredId = getActiveSystemAdapter().defaultReferenceCurrencyId;
+  const defaultId = currencies.find(currency => currency.id === preferredId)?.id ?? currencies[0].id;
   const options = currencies.map(currency =>
     `<option value="${escapeHtml(currency.id)}"${currency.id === defaultId ? " selected" : ""}>`
       + `${escapeHtml(currency.name)} (${escapeHtml(currency.symbol)})${currency.hidden ? " - Hidden" : ""}</option>`
@@ -536,13 +526,16 @@ async function _promptCurrencyLoot(folderId) {
 }
 
 async function _promptHiddenItemCreate(folderId) {
-  const actor = getBackingActor();
-  if (!actor) {
-    ui.notifications.error(`${MODULE_TITLE}: no backing actor.`);
+  const staging = getStagingActor();
+  if (!staging) {
+    ui.notifications.error(`${MODULE_TITLE}: GM staging storage is unavailable.`);
     return null;
   }
 
-  const itemTypes = game.documentTypes.Item.filter(t => !["base"].includes(t));
+  const adapter = getActiveSystemAdapter();
+  const itemTypes = game.documentTypes.Item.filter(type =>
+    type !== "base" && adapter.canReceiveItem({ type }, staging)
+  );
   if (itemTypes.length === 0) {
     ui.notifications.error(`${MODULE_TITLE}: no item types are available.`);
     return null;
@@ -629,13 +622,11 @@ async function _promptHiddenItemCreate(folderId) {
 }
 
 async function _createHiddenItem(formValues, folderId) {
-  const actor = getBackingActor();
-  if (!actor) return null;
+  const staging = getStagingActor();
+  if (!staging) return null;
 
-  const quartermasterFlags = {
-    [FLAGS.HIDDEN]: true
-  };
-  if (folderId) quartermasterFlags.lootPrepFolder = folderId;
+  const quartermasterFlags = {};
+  if (folderId) quartermasterFlags[FLAGS.LOOT_PREP_FOLDER] = folderId;
 
   const itemData = {
     name: formValues.name,
@@ -646,17 +637,9 @@ async function _createHiddenItem(formValues, folderId) {
     }
   };
 
-  const [created] = await actor.createEmbeddedDocuments("Item", [itemData]);
+  const result = await stageHiddenItem(itemData);
+  const created = result.status === "success" ? result.item : null;
   if (!created) return null;
-
-  await writeEntry({
-    type: "hidden.staged",
-    requestId: `qm-hidden-staged-${created.id}-${Date.now()}`,
-    userId: game.user.id,
-    itemId: created.id,
-    itemName: created.name ?? "(unknown)",
-    backingActorId: actor.id
-  });
 
   ui.notifications.info(`"${created.name}" created in GM Loot Prep.`);
   return created;
@@ -802,8 +785,8 @@ function _wireLootPrepNotes(app) {
 
 async function _editFolderNote(app, folderId) {
   if (!folderId) return;
-  const actor = getBackingActor();
-  const folder = getFolders(actor).find(entry => entry.id === folderId);
+  const staging = getStagingActor();
+  const folder = getFolders(staging).find(entry => entry.id === folderId);
   if (!folder) return;
 
   const note = await _promptLootPrepNote({
@@ -823,12 +806,12 @@ async function _editFolderNote(app, folderId) {
 
 async function _editItemNote(app, itemId) {
   if (!itemId) return;
-  const actor = getBackingActor();
-  const item = actor?.items.get(itemId);
+  const staging = getStagingActor();
+  const item = staging?.items.get(itemId);
   if (!item) return;
 
-  const folderId = item.getFlag(MODULE_ID, "lootPrepFolder") ?? null;
-  const folder = folderId ? getFolders(actor).find(entry => entry.id === folderId) : null;
+  const folderId = item.getFlag(MODULE_ID, FLAGS.LOOT_PREP_FOLDER) ?? null;
+  const folder = folderId ? getFolders(staging).find(entry => entry.id === folderId) : null;
   const inheritedNote = getFolderNote(folder);
   const note = await _promptLootPrepNote({
     title: `Item Note: ${item.name ?? "(unnamed)"}`,
@@ -882,15 +865,19 @@ async function _onHiddenItemDrop(event, app, folderId) {
   const uuid = data.uuid ?? null;
   if (!uuid) return;
 
-  const actor = getBackingActor();
-  if (!actor) { ui.notifications.error(`${MODULE_TITLE}: no backing actor.`); return; }
+  const backing = getBackingActor();
+  const staging = getStagingActor();
+  if (!backing || !staging) {
+    ui.notifications.error(`${MODULE_TITLE}: Quartermaster storage is unavailable.`);
+    return;
+  }
 
   // Loot Prep internal drag: item already hidden, just move to folder
   if (data[QM_LOOTPREP_DRAG_MARKER]) {
     let sourceItem;
     try { sourceItem = await fromUuid(uuid); } catch { return; }
-    if (!sourceItem || sourceItem.parent?.id !== actor.id) return;
-    const currentFolder = sourceItem.getFlag(MODULE_ID, "lootPrepFolder") ?? null;
+    if (!sourceItem || sourceItem.parent?.uuid !== staging.uuid) return;
+    const currentFolder = sourceItem.getFlag(MODULE_ID, FLAGS.LOOT_PREP_FOLDER) ?? null;
     if (currentFolder === folderId) return; // same folder — no-op
     await setItemFolder(sourceItem.id, folderId);
     ui.notifications.info(`"${sourceItem.name}" moved to ${folderId ? "folder" : "Uncategorized"}.`);
@@ -901,20 +888,24 @@ async function _onHiddenItemDrop(event, app, folderId) {
   if (data[QM_REHIDE_MARKER]) {
     let sourceItem;
     try { sourceItem = await fromUuid(uuid); } catch { return; }
-    if (!sourceItem || sourceItem.parent?.id !== actor.id) return;
-    await setItemHidden(sourceItem.id, true);
+    if (!sourceItem || sourceItem.parent?.uuid !== backing.uuid) return;
+    const stagedItem = await setItemHidden(sourceItem.id, true);
+    if (!stagedItem) {
+      ui.notifications.error(`${MODULE_TITLE}: could not move the item into GM staging.`);
+      return;
+    }
     await writeEntry({
       type: "hidden.staged",
-      requestId: `qm-rehide-${sourceItem.id}-${Date.now()}`,
+      requestId: `qm-rehide-${stagedItem.id}-${Date.now()}`,
       userId: game.user.id,
-      itemId: sourceItem.id,
+      itemId: stagedItem.id,
       itemName: sourceItem.name,
-      backingActorId: actor.id,
+      backingActorId: backing.id,
+      stagingActorId: staging.id,
       visibility: "gm"
     });
     if (folderId) {
-      const { setItemFolder } = await import("../loot-prep-folders.js");
-      await setItemFolder(sourceItem.id, folderId);
+      await setItemFolder(stagedItem.id, folderId);
     }
     ui.notifications.info(`"${sourceItem.name}" moved to hidden loot pool.`);
     return;
@@ -925,12 +916,20 @@ async function _onHiddenItemDrop(event, app, folderId) {
   try { sourceItem = await fromUuid(uuid); } catch { return; }
   if (!sourceItem || sourceItem.documentName !== "Item") return;
 
+  const adapter = getActiveSystemAdapter();
+  if (!adapter.canReceiveItem(sourceItem, staging)) {
+    ui.notifications.warn(`${MODULE_TITLE}: this item is not compatible with GM staging.`);
+    return;
+  }
   const rawData = sourceItem.toObject();
-  const sanitized = sanitizeItemForTransfer(rawData, actor, { sourceItemUuid: uuid });
+  const sanitized = sanitizeItemForTransfer(rawData, staging, {
+    sourceItem,
+    sourceItemUuid: uuid,
+    adapter
+  });
   const result = await stageHiddenItem(sanitized);
   if (result.status === "success") {
     if (folderId) {
-      const { setItemFolder } = await import("../loot-prep-folders.js");
       await setItemFolder(result.item.id, folderId);
     }
     ui.notifications.info(`"${result.item.name}" staged as hidden loot.`);
@@ -947,8 +946,8 @@ function _wireHiddenItemDrag(app) {
     row.addEventListener("dragstart", (event) => {
       const itemId = row.dataset.itemId;
       if (!itemId) return;
-      const actor = getBackingActor();
-      const item = actor?.items.get(itemId);
+      const staging = getStagingActor();
+      const item = staging?.items.get(itemId);
       if (!item) return;
       event.dataTransfer.setData("text/plain", JSON.stringify({
         type: "Item", uuid: item.uuid,
@@ -972,8 +971,8 @@ function _wireDoubleClick(app) {
       if (event.target.closest("button, input")) return;
       const itemId = row.dataset.itemId;
       if (!itemId) return;
-      const actor = getBackingActor();
-      const item = actor?.items.get(itemId);
+      const staging = getStagingActor();
+      const item = staging?.items.get(itemId);
       if (item) item.sheet.render(true);
     });
   }
@@ -1022,36 +1021,27 @@ function scheduleLootPrepRefresh() {
 }
 
 export function registerLootPrepRefreshHooks() {
-  const getBacking = () => getBackingActor();
+  const isStorageActor = actor => {
+    const backing = getBackingActor();
+    const staging = getStagingActor();
+    return [backing, staging].some(candidate =>
+      candidate && actor && (actor.uuid === candidate.uuid || actor.id === candidate.id)
+    );
+  };
 
-  Hooks.on("updateActor", (actor, changes) => {
-    const b = getBacking();
-    if (!b || actor.id !== b.id) return;
-    if (foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.CUSTOM_RESOURCES}`) ||
-        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.HIDDEN_CURRENCY}`) ||
-        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.LOOT_PREP_FOLDERS}`) ||
-        foundry.utils.hasProperty(changes, "system.currency")) {
-      scheduleLootPrepRefresh();
-    }
+  Hooks.on("updateActor", (actor) => {
+    if (isStorageActor(actor)) scheduleLootPrepRefresh();
   });
 
-  Hooks.on("updateItem", (item, changes) => {
-    const b = getBacking();
-    if (!b || item.parent?.id !== b.id) return;
-    if (foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.HIDDEN}`) ||
-        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.lootPrepFolder`) ||
-        foundry.utils.hasProperty(changes, `flags.${MODULE_ID}.${FLAGS.LOOT_PREP_NOTE}`)) {
-      scheduleLootPrepRefresh();
-    }
+  Hooks.on("updateItem", (item) => {
+    if (isStorageActor(item.parent)) scheduleLootPrepRefresh();
   });
 
   Hooks.on("createItem", (item) => {
-    const b = getBacking();
-    if (b && item.parent?.id === b.id) scheduleLootPrepRefresh();
+    if (isStorageActor(item.parent)) scheduleLootPrepRefresh();
   });
 
   Hooks.on("deleteItem", (item) => {
-    const b = getBacking();
-    if (b && item.parent?.id === b.id) scheduleLootPrepRefresh();
+    if (isStorageActor(item.parent)) scheduleLootPrepRefresh();
   });
 }

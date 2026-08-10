@@ -9,14 +9,23 @@
  * Repo:   https://github.com/Lipton1010/quartermaster
  */
 
-import { MODULE_ID, MODULE_TITLE } from "./constants.js";
+import {
+  MODULE_ID,
+  MODULE_TITLE,
+  STORAGE_SCHEMA_VERSION,
+  SYSTEM_ADAPTER_API_VERSION,
+  FLAGS
+} from "./constants.js";
 import { registerSettings } from "./settings.js";
 import {
-  ensureBackingActor,
+  ensureStorageActors,
+  getBackingActor,
+  getStagingActor,
   suppressBackingActorFromDirectory,
-  suppressBackingActorFromUserConfig,
+  registerStoragePrivacyHooks,
+  suppressBackingActorFromOpenUserConfigs,
   preventBackingActorDeletion,
-  preventBackingActorCharacterAssignment
+  preventInactiveGmStorageItemMutation
 } from "./backing-actor.js";
 import { injectSidebarButtons } from "./sidebar.js";
 import {
@@ -55,57 +64,6 @@ import * as Sanitization from "./sanitization.js";
 import * as WeightCache from "./weight-cache.js";
 import * as ClaimCommit from "./claim-commit.js";
 import { registerEgressInterceptor } from "./drag-drop.js";
-import {
-  runStep3Tests,
-  showDiagnostics,
-  cleanupTestLogEntries
-} from "./test-step3.js";
-import {
-  runStep4Tests,
-  showSocketDiagnostics
-} from "./test-step4.js";
-import {
-  runStep7Tests
-} from "./test-step7.js";
-import {
-  runStep8Tests,
-  cleanupStep8Fixtures
-} from "./test-step8.js";
-import {
-  runStep9Tests,
-  cleanupStep9Fixtures
-} from "./test-step9.js";
-import {
-  runStep10Tests,
-  cleanupStep10Fixtures
-} from "./test-step10.js";
-import {
-  runStep11Tests
-} from "./test-step11.js";
-import {
-  runStep13Tests,
-  simulatePlayerCurrencyRequest
-} from "./test-step13.js";
-import {
-  runStep14Tests,
-  cleanupStep14Fixtures
-} from "./test-step14.js";
-import {
-  runStep15Tests,
-  cleanupStep15Fixtures
-} from "./test-step15.js";
-import {
-  runStep16Tests,
-  cleanupStep16Fixtures
-} from "./test-step16.js";
-import {
-  runStep17Tests,
-  cleanupStep17Fixtures
-} from "./test-step17.js";
-import {
-  runStep18Tests,
-  cleanupStep18Fixtures
-} from "./test-step18.js";
 import * as TransactionLogQuery from "./transaction-log-query.js";
 import * as ApprovalPolicy from "./approval-policy.js";
 import * as Resources from "./resources.js";
@@ -117,7 +75,23 @@ import * as ContextMenu from "./context-menu.js";
 import { registerCompendiumContextMenu } from "./compendium-menu.js";
 import * as InventoryToken from "./inventory-token.js";
 import * as Currencies from "./currencies.js";
-import { openCurrencyManager } from "./apps/currency-manager-app.js";
+import { openCurrencyManager, closeCurrencyManager } from "./apps/currency-manager-app.js";
+import * as RecoveryRecords from "./recovery-records.js";
+import { isActiveStorageGM } from "./storage-ledger.js";
+import {
+  initializeSystemAdapters,
+  registerSystemAdapter,
+  registerAdapter,
+  getSystemAdapter,
+  getActiveSystemAdapter,
+  getSystemAdapterDiagnostics,
+  normalizeItem as normalizeSystemItem
+} from "./system-adapters/registry.js";
+
+// UserConfig may render before Foundry reaches `ready`. Register only the
+// selector and assignment privacy guards immediately; mutation hooks still
+// wait for verified runtime storage below.
+registerStoragePrivacyHooks();
 
 /**
  * Foundry lifecycle: init
@@ -126,8 +100,9 @@ import { openCurrencyManager } from "./apps/currency-manager-app.js";
  */
 Hooks.once("init", () => {
   console.log(`${MODULE_TITLE} | Init`);
-  registerSettings();
-  registerSocketHandler();
+  installPublicApi({ runtimeReady: false });
+  const adapter = initializeSystemAdapters();
+  registerSettings(adapter);
 });
 
 /**
@@ -138,9 +113,232 @@ Hooks.once("init", () => {
 Hooks.once("ready", async () => {
   console.log(`${MODULE_TITLE} | Ready`);
 
-  await ensureBackingActor();
-  await Currencies.ensureCurrencyConfig();
+  // Cover a UserConfig which was already open before the Actor collection and
+  // storage settings became available to the privacy render hook.
+  suppressBackingActorFromOpenUserConfigs();
+
+  if (game.user?.isGM && !isActiveStorageGM()) {
+    installPublicApi({ runtimeReady: false });
+    deferInactiveGMRuntimeActivation();
+    console.warn(
+      `${MODULE_TITLE} | This GM is not Foundry's active GM; storage and runtime `
+      + "mutation hooks remain disabled until this client is elected"
+    );
+    return;
+  }
+
+  try {
+    await prepareRuntimeStorage();
+  } catch (error) {
+    console.error(`${MODULE_TITLE} | Storage initialization failed safely`, error);
+    installPublicApi({ runtimeReady: false });
+    if (!game.user?.isGM) {
+      deferPlayerRuntimeActivation();
+      console.warn(
+        `${MODULE_TITLE} | Waiting for the GM to finish storage migration; `
+        + "runtime mutation and UI hooks remain disabled"
+      );
+      return;
+    }
+    if (!isActiveStorageGM()) {
+      deferInactiveGMRuntimeActivation();
+      console.warn(
+        `${MODULE_TITLE} | Active-GM ownership changed during startup; `
+        + "this client will wait without mutating storage"
+      );
+      return;
+    }
+    ui.notifications?.error?.(
+      `${MODULE_TITLE}: storage setup or migration did not complete. No legacy data was removed; see the console for details.`,
+      { permanent: true }
+    );
+    console.warn(`${MODULE_TITLE} | Runtime mutation and UI hooks remain disabled until storage is ready`);
+    return;
+  }
+
+  if (!registerRuntimeHooks()) {
+    installPublicApi({ runtimeReady: false });
+    if (game.user?.isGM) deferInactiveGMRuntimeActivation();
+    return;
+  }
+  registerGmElectionHooks();
+  gmRuntimeSuspended = false;
+  installPublicApi({ runtimeReady: true });
+  logRuntimeLoaded();
+});
+
+let runtimeHooksRegistered = false;
+let storageReadinessHookId = null;
+let runtimeActivationPromise = null;
+let gmElectionHookIds = [];
+let gmRuntimeSuspended = false;
+
+async function prepareRuntimeStorage() {
+  if (game.user?.isGM) {
+    if (!isActiveStorageGM()) throw new Error("active-gm-required");
+    const storage = await ensureStorageActors();
+    if (!hasCurrentStorageSchema(storage.backingActor)
+        || !hasCurrentStorageSchema(storage.stagingActor)) {
+      throw new Error("storage-schema-not-ready");
+    }
+    if (!isActiveStorageGM()) throw new Error("active-gm-required");
+    await Currencies.ensureCurrencyConfig(storage.backingActor);
+    if (!await TransactionLog.refreshPublicProjection()) {
+      throw new Error("transaction-log-projection-refresh-failed");
+    }
+    return storage;
+  }
+
+  // Players cannot read the private staging Actor. The shared marker advances
+  // last during migration, so its current value is the public readiness proof.
+  const backingActor = getBackingActor();
+  if (!hasCurrentStorageSchema(backingActor)) throw new Error("storage-schema-not-ready");
+  return { backingActor, stagingActor: null, migrated: false };
+}
+
+function hasCurrentStorageSchema(actor) {
+  return Number(actor?.getFlag?.(MODULE_ID, FLAGS.STORAGE_SCHEMA_VERSION))
+    === STORAGE_SCHEMA_VERSION;
+}
+
+/**
+ * A player can reach ready while the active GM is still migrating storage.
+ * Observe only the shared backing Actor and activate after its marker advances;
+ * the marker is written last, so no mutation or UI hooks are registered early.
+ */
+function deferPlayerRuntimeActivation() {
+  if (game.user?.isGM || runtimeHooksRegistered || storageReadinessHookId !== null) return;
+  storageReadinessHookId = Hooks.on("updateActor", actor => {
+    void tryActivateDeferredPlayerRuntime(actor);
+  });
+
+  // Close the race where the schema update arrived between the ready check and
+  // hook registration.
+  void tryActivateDeferredPlayerRuntime();
+}
+
+/**
+ * A second GM must not race the elected active GM's setup. Listen for Foundry
+ * user-presence/election changes and activate only after this exact client is
+ * the collection's activeGM.
+ */
+function deferInactiveGMRuntimeActivation() {
+  if (!game.user?.isGM || isActiveStorageGM() || runtimeHooksRegistered) {
+    if (isActiveStorageGM()) void tryActivateDeferredGMRuntime();
+    return;
+  }
+  registerGmElectionHooks();
+  gmRuntimeSuspended = true;
+
+  // Close the race where the election changed between the ready check and
+  // hook registration.
+  void tryActivateDeferredGMRuntime();
+}
+
+async function tryActivateDeferredGMRuntime() {
+  if (!game.user?.isGM || !isActiveStorageGM()) return false;
+  if (runtimeActivationPromise) return runtimeActivationPromise;
+
+  runtimeActivationPromise = (async () => {
+    try {
+      await prepareRuntimeStorage();
+      if (!isActiveStorageGM()) return false;
+      if (!runtimeHooksRegistered && !registerRuntimeHooks()) return false;
+      gmRuntimeSuspended = false;
+      installPublicApi({ runtimeReady: true });
+      registerGmElectionHooks();
+      try {
+        ui.actors?.render?.({ force: true });
+      } catch { /* directory refresh is best-effort */ }
+      logRuntimeLoaded();
+      return true;
+    } catch (error) {
+      console.warn(`${MODULE_TITLE} | Deferred active-GM runtime activation is still waiting`, error);
+      return false;
+    } finally {
+      runtimeActivationPromise = null;
+    }
+  })();
+  return runtimeActivationPromise;
+}
+
+async function tryActivateDeferredPlayerRuntime(updatedActor = null) {
+  if (game.user?.isGM || runtimeHooksRegistered) return false;
+  const backingActor = getBackingActor();
+  if (!backingActor || (updatedActor && updatedActor.id !== backingActor.id)) return false;
+  if (!hasCurrentStorageSchema(backingActor)) return false;
+  if (runtimeActivationPromise) return runtimeActivationPromise;
+
+  runtimeActivationPromise = (async () => {
+    try {
+      await prepareRuntimeStorage();
+      if (!registerRuntimeHooks()) return false;
+      installPublicApi({ runtimeReady: true });
+      clearPlayerRuntimeActivationHook();
+      logRuntimeLoaded();
+      return true;
+    } catch (error) {
+      console.warn(`${MODULE_TITLE} | Deferred runtime activation is still waiting`, error);
+      return false;
+    } finally {
+      runtimeActivationPromise = null;
+    }
+  })();
+  return runtimeActivationPromise;
+}
+
+function clearPlayerRuntimeActivationHook() {
+  if (storageReadinessHookId === null) return;
+  Hooks.off("updateActor", storageReadinessHookId);
+  storageReadinessHookId = null;
+}
+
+function registerGmElectionHooks() {
+  if (!game.user?.isGM || gmElectionHookIds.length > 0) return;
+  const onElectionChange = () => {
+    if (isActiveStorageGM()) {
+      if (gmRuntimeSuspended || !runtimeHooksRegistered) void tryActivateDeferredGMRuntime();
+    }
+    else suspendInactiveGmRuntime();
+  };
+  gmElectionHookIds = [
+    ["updateUser", Hooks.on("updateUser", onElectionChange)],
+    ["userConnected", Hooks.on("userConnected", onElectionChange)]
+  ];
+}
+
+function suspendInactiveGmRuntime() {
+  if (!game.user?.isGM || isActiveStorageGM()) return false;
+  if (gmRuntimeSuspended) return true;
+  installPublicApi({ runtimeReady: false });
+  void closeInventoryApp();
+  void closeLootPrepApp();
+  void closeTransactionLogApp();
+  void closeCurrencyManager();
+  try {
+    ui.actors?.render?.({ force: true });
+  } catch { /* directory refresh is best-effort */ }
+  if (!gmRuntimeSuspended) {
+    console.warn(
+      `${MODULE_TITLE} | This client is no longer the active GM; mutable APIs and `
+      + "Quartermaster GM windows are suspended until reelection"
+    );
+  }
+  gmRuntimeSuspended = true;
+  return true;
+}
+
+function logRuntimeLoaded() {
+  console.log(`${MODULE_TITLE} | v${game.modules.get(MODULE_ID)?.version ?? "unknown"} loaded`);
+}
+
+function registerRuntimeHooks() {
+  if (runtimeHooksRegistered) return true;
+  if (game.user?.isGM && !isActiveStorageGM()) return false;
+  runtimeHooksRegistered = true;
+
   initializeCoordinator();
+  registerSocketHandler();
   registerInventoryRefreshHooks();
   WeightCache.registerWeightCacheHooks();
   registerEgressInterceptor();
@@ -149,11 +347,56 @@ Hooks.once("ready", async () => {
   registerCompendiumContextMenu();
   InventoryToken.registerInventoryTokenShortcutHooks();
 
-  // Expose a public API on the module for other scripts and the test harness
+  Hooks.on("renderActorDirectory", (app, html) => {
+    suppressBackingActorFromDirectory(app, html);
+    if (!game.user?.isGM || isActiveStorageGM()) injectSidebarButtons(app, html);
+  });
+  Hooks.on("preDeleteActor", preventBackingActorDeletion);
+  Hooks.on("preCreateItem", preventInactiveGmStorageItemMutation);
+  Hooks.on("preUpdateItem", preventInactiveGmStorageItemMutation);
+  Hooks.on("preDeleteItem", preventInactiveGmStorageItemMutation);
+
+  // The Actors directory can finish its first render before GM storage and
+  // runtime hooks are ready. Force one post-registration render so the vaults
+  // are suppressed and Quartermaster controls appear immediately on a fresh
+  // world instead of waiting for an unrelated directory refresh.
+  try {
+    ui.actors?.render?.({ force: true });
+  } catch (error) {
+    console.warn(`${MODULE_TITLE} | Could not refresh the Actors directory`, error);
+  }
+  return true;
+}
+
+/** Install the stable public facade early enough for integration modules. */
+function installPublicApi({ runtimeReady = false } = {}) {
   const module = game.modules.get(MODULE_ID);
-  if (module) {
-    module.api = {
-      version: game.modules.get(MODULE_ID)?.version ?? "unknown",
+  if (!module) return null;
+
+  const api = {
+    version: module.version ?? "unknown",
+    runtimeReady,
+    system: {
+      apiVersion: SYSTEM_ADAPTER_API_VERSION,
+      registerAdapter,
+      registerSystemAdapter,
+      getAdapter: getSystemAdapter,
+      getActiveAdapter: getActiveSystemAdapter,
+      normalizeItem: normalizeSystemItem,
+      diagnostics: getSystemAdapterDiagnostics
+    },
+    storage: {
+      getSharedActor: getBackingActor,
+      getStagingActor
+    }
+  };
+
+  if (runtimeReady) {
+    Object.assign(api.storage, {
+      ensure: ensureStorageActors,
+      recovery: RecoveryRecords
+    });
+    Object.assign(api, {
       coordinator: {
         executeOperation,
         diagnostics: coordinatorDiagnostics
@@ -190,68 +433,10 @@ Hooks.once("ready", async () => {
       currencies: Currencies,
       sanitization: Sanitization,
       weightCache: WeightCache,
-      claimCommit: ClaimCommit,
-      test: {
-        runStep3Tests,
-        runStep4Tests,
-        runStep7Tests,
-        runStep8Tests,
-        runStep9Tests,
-        runStep10Tests,
-        runStep11Tests,
-        runStep13Tests,
-        runStep14Tests,
-        runStep15Tests,
-        runStep16Tests,
-        runStep17Tests,
-        runStep18Tests,
-        simulatePlayerCurrencyRequest,
-        showDiagnostics,
-        showSocketDiagnostics,
-        cleanupTestLogEntries,
-        cleanupStep8Fixtures,
-        cleanupStep9Fixtures,
-        cleanupStep10Fixtures,
-        cleanupStep14Fixtures,
-        cleanupStep15Fixtures,
-        cleanupStep16Fixtures,
-        cleanupStep17Fixtures,
-        cleanupStep18Fixtures
-      }
-    };
+      claimCommit: ClaimCommit
+    });
   }
 
-  console.log(`${MODULE_TITLE} | v${game.modules.get(MODULE_ID)?.version ?? "unknown"} loaded`);
-});
-
-/**
- * Hook: renderActorDirectory
- * Fires every time the Actors sidebar tab renders. Used to:
- *   1. Inject the two Quartermaster buttons (sidebar.js)
- *   2. Suppress the backing actor from the visible actor list (backing-actor.js)
- */
-Hooks.on("renderActorDirectory", (app, html, data) => {
-  suppressBackingActorFromDirectory(app, html);
-  injectSidebarButtons(app, html);
-});
-
-/**
- * Hook: renderUserConfig
- * Removes the Quartermaster backing actor from the Player Character selector.
- */
-Hooks.on("renderUserConfig", (app, html, data) => {
-  suppressBackingActorFromUserConfig(app, html);
-});
-
-/**
- * Hook: preUpdateUser
- * Prevents the Quartermaster backing actor from being saved as a user character.
- */
-Hooks.on("preUpdateUser", preventBackingActorCharacterAssignment);
-
-/**
- * Hook: preDeleteActor
- * Fires before any actor is deleted. Used to protect the backing actor
- * from accidental deletion while the module is active.
- */
-Hooks.on("preDeleteActor", preventBackingActorDeletion);
+  module.api = api;
+  return api;
+}

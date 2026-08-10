@@ -3,7 +3,7 @@
  *
  * Injects Quartermaster options into compendium item context menus:
  *   - "Send to Party Inventory"  (visible on backing actor)
- *   - "Send to GM Staging"       (hidden on backing actor)
+ *   - "Send to GM Staging"       (private staging actor)
  *
  * GM-only: options only appear for GM users.
  *
@@ -12,9 +12,13 @@
  * a custom context menu (same pattern as context-menu.js).
  */
 
-import { MODULE_ID, MODULE_TITLE } from "./constants.js";
-import { getBackingActor } from "./backing-actor.js";
+import { MODULE_TITLE } from "./constants.js";
+import { getBackingActor, getStagingActor } from "./backing-actor.js";
 import { importCompendiumItem } from "./drag-drop.js";
+import { stageHiddenItem } from "./hidden-items.js";
+import { isActiveStorageGM, requireActiveStorageGM } from "./storage-ledger.js";
+import { sanitizeItemForTransfer } from "./sanitization.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
 
 function escapeHtml(s) {
   if (typeof s !== "string") return "";
@@ -39,7 +43,7 @@ function closeMenu() {
 export function registerCompendiumContextMenu() {
   // Hook fires every time a compendium window renders its content
   Hooks.on("renderCompendium", (app, html) => {
-    if (!game.user.isGM) return;
+    if (!isActiveStorageGM()) return;
 
     // Check this is an Item-type compendium
     const pack = app.collection;
@@ -129,11 +133,13 @@ function showCompendiumMenu(event, pack, docId) {
 }
 
 async function handleAction(action, pack, docId) {
-  if (!game.user.isGM) return;
+  if (!isActiveStorageGM()) return;
+  requireActiveStorageGM();
 
   const backingActor = getBackingActor();
-  if (!backingActor) {
-    ui.notifications.error(`${MODULE_TITLE}: no backing actor configured.`);
+  const stagingActor = getStagingActor();
+  if (!backingActor || !stagingActor) {
+    ui.notifications.error(`${MODULE_TITLE}: Quartermaster storage is unavailable.`);
     return;
   }
 
@@ -154,9 +160,31 @@ async function handleAction(action, pack, docId) {
     case "send-to-inventory":
       await importCompendiumItem(item, backingActor, { hidden: false });
       break;
-    case "send-to-staging":
-      await importCompendiumItem(item, backingActor, { hidden: true });
+    case "send-to-staging": {
+      const adapter = getActiveSystemAdapter();
+      if (!adapter.canReceiveItem(item, stagingActor)) {
+        ui.notifications.warn(`${MODULE_TITLE}: this item is not compatible with GM staging.`);
+        break;
+      }
+      try {
+        const sanitized = sanitizeItemForTransfer(item.toObject(), stagingActor, {
+          sourceItem: item,
+          sourceItemUuid: item.uuid,
+          preserveHiddenFlag: false,
+          adapter
+        });
+        const result = await stageHiddenItem(sanitized);
+        if (result.status === "success") {
+          ui.notifications.info(`"${result.item.name}" added to GM staging.`);
+        } else {
+          ui.notifications.error(`${MODULE_TITLE}: staging failed — ${result.error}`);
+        }
+      } catch (error) {
+        console.error(`${MODULE_TITLE} | compendium staging failed`, error);
+        ui.notifications.error(`${MODULE_TITLE}: staging failed — ${error.message}`);
+      }
       break;
+    }
     default:
       console.warn(`${MODULE_TITLE} | unknown compendium action: ${action}`);
   }

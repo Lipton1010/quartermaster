@@ -18,7 +18,7 @@
 
 import { MODULE_TITLE } from "./constants.js";
 import {
-  executeOperation,
+  executeOperation as executeCoordinatorOperation,
   diagnostics,
   _resetCacheForTesting
 } from "./operation-coordinator.js";
@@ -34,6 +34,20 @@ function newTestId(label) {
 
 async function delay(ms) {
   return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Bind every in-world test request to a stable synthetic payload. Production
+ * requests are bound by the authenticated socket dispatcher; the console
+ * harness mirrors that contract so its idempotency assertions remain valid.
+ */
+function executeOperation(options) {
+  const requestData = options.requestData ?? {
+    type: "quartermaster.coordinatorTest",
+    operationType: options.operationType,
+    resourceKeys: [...(options.resourceKeys ?? [])].map(String).sort()
+  };
+  return executeCoordinatorOperation({ ...options, requestData });
 }
 
 /**
@@ -99,10 +113,11 @@ async function testBasicExecution() {
 }
 
 /**
- * Test 2: same requestId returns from the LRU cache without re-running fn.
+ * Test 2: same requestId returns from the durable tombstone without re-running fn.
  */
 async function testIdempotencyCache() {
   const requestId = newTestId("cache");
+  const timestamp = Date.now();
   let fnCalls = 0;
 
   const r1 = await executeOperation({
@@ -110,7 +125,7 @@ async function testIdempotencyCache() {
     requestId,
     operationType: "test-cache",
     requester: game.user.id,
-    timestamp: Date.now(),
+    timestamp,
     fn: async () => { fnCalls++; return { call: 1 }; }
   });
 
@@ -119,38 +134,37 @@ async function testIdempotencyCache() {
     requestId,
     operationType: "test-cache",
     requester: game.user.id,
-    timestamp: Date.now(),
+    timestamp,
     fn: async () => { fnCalls++; return { call: 2 }; }
   });
 
-  const pass = fnCalls === 1 && r2.fromCache === true && r1.resultData.call === 1;
+  const pass = fnCalls === 1 && r2.fromTombstone === true && r1.resultData.call === 1;
   return {
-    name: "2. LRU idempotency",
+    name: "2. Durable idempotency",
     pass,
     detail: pass
-      ? `fn ran once, second call returned fromCache=true with original result`
+      ? `fn ran once, second call returned fromTombstone=true with original result`
       : `fnCalls=${fnCalls}, r2=${JSON.stringify(r2)}`
   };
 }
 
 /**
- * Test 3: durable log idempotency. We write an entry directly, then verify
- * a subsequent call with the same requestId hits the log lookup.
+ * Test 3: durable tombstone idempotency survives a local cache reset.
  */
 async function testIdempotencyLog() {
   const requestId = newTestId("log");
+  const timestamp = Date.now();
   let fnCalls = 0;
 
-  // Pre-seed the log with an entry for this requestId
-  await TransactionLog.writeEntry({
+  // Complete a bound operation, then clear the LRU to force durable replay.
+  const first = await executeOperation({
+    resourceKeys: ["test:log"],
     requestId,
-    operationType: "test-log-preseed",
-    actorId: game.user.id,
-    status: "success",
-    resultData: { preseeded: true }
+    operationType: "test-log",
+    requester: game.user.id,
+    timestamp,
+    fn: async () => ({ preseeded: true })
   });
-
-  // Clear in-memory cache to force log lookup
   _resetCacheForTesting();
 
   const result = await executeOperation({
@@ -158,16 +172,19 @@ async function testIdempotencyLog() {
     requestId,
     operationType: "test-log",
     requester: game.user.id,
-    timestamp: Date.now(),
+    timestamp,
     fn: async () => { fnCalls++; return { call: "should-not-run" }; }
   });
 
-  const pass = fnCalls === 0 && result.fromLog === true && result.resultData?.preseeded === true;
+  const pass = first.status === "success"
+    && fnCalls === 0
+    && result.fromTombstone === true
+    && result.resultData?.preseeded === true;
   return {
     name: "3. Transaction log idempotency",
     pass,
     detail: pass
-      ? "fn did not run; returned fromLog=true with preseeded data"
+      ? "fn did not run; returned fromTombstone=true with preseeded data"
       : `fnCalls=${fnCalls}, result=${JSON.stringify(result)}`
   };
 }

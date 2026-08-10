@@ -189,7 +189,7 @@
   filter: saturate(0.9) brightness(1.15);
 }
 
-/* Header strip with capacity bar and total gp */
+/* Header strip with optional load bar and reference-currency total */
 .quartermaster .qm-inv-header {
   display: flex;
   align-items: center;
@@ -238,7 +238,7 @@
   background: var(--color-level-warning, #c0392b);
 }
 
-.quartermaster .qm-inv-total-gp {
+.quartermaster .qm-inv-total-value {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -438,7 +438,7 @@
   text-align: right;
 }
 
-.quartermaster .qm-item-weight {
+.quartermaster .qm-item-load {
   font-variant-numeric: tabular-nums;
   font-size: 0.85em;
   opacity: 0.6;
@@ -1416,6 +1416,11 @@ body.qm-dragging {
   border-color: rgba(255, 255, 255, 0.08);
 }
 
+.quartermaster-loot-prep-root .qm-hidden-item-row.qm-unidentified {
+  opacity: 0.72;
+  font-style: italic;
+}
+
 .quartermaster-loot-prep-root .qm-hidden-item-select {
   width: 14px;
   height: 14px;
@@ -1438,14 +1443,6 @@ body.qm-dragging {
 
 .quartermaster-loot-prep-root .qm-hidden-item-name {
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.quartermaster-loot-prep-root .qm-hidden-item-source {
-  font-size: 0.72em;
-  opacity: 0.55;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2339,7 +2336,7 @@ body.qm-dragging {
   white-space: nowrap;
 }
 
-/* Item meta container: weight + price stacked in one grid cell */
+/* Item meta container: adapter load + value stacked in one grid cell */
 .quartermaster .qm-item-meta {
   display: flex;
   flex-direction: column;
@@ -2348,7 +2345,7 @@ body.qm-dragging {
   white-space: nowrap;
 }
 
-.quartermaster .qm-item-meta .qm-item-weight {
+.quartermaster .qm-item-meta .qm-item-load {
   font-size: 0.82em;
   opacity: 0.75;
 }
