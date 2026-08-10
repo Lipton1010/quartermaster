@@ -92,9 +92,9 @@ npm test
 npm run package
 ```
 
-On 2026-08-10, the final pre-commit working tree passed syntax checks for 79 JavaScript files, all 78/78 headless tests, and the release/system-boundary validator. The exact committed candidate must run both commands again. Headless checks do not replace the live Foundry matrix or migration rehearsal.
+On 2026-08-10, the committed candidate passed syntax checks for 79 JavaScript files, all 78/78 headless tests, and the release/system-boundary validator. Headless checks do not replace the live Foundry matrix or migration rehearsal.
 
-The package command writes `artifacts/system-agnostic/module.zip` outside the worktree. It builds from the committed tree, so commit completeness and a clean working tree are part of the gate. The archive is designed to exclude Git metadata, development fixtures, test data, and CI files; its final contents, checksum, and file list must still be inspected and retained as evidence. That committed package evidence is still pending. Publishing, tagging, installation, and merging are intentionally separate operations.
+The package command writes `artifacts/system-agnostic/module.zip` outside the worktree. It builds from the committed tree, so commit completeness and a clean working tree are part of the gate. The validated candidate archive contained 70 clean entries and emitted a manifest, SHA-256 checksum, and complete file list; exact final-build evidence is retained beside the archive. Publishing, tagging, installation, and merging are intentionally separate operations.
 
 ## Compatibility
 

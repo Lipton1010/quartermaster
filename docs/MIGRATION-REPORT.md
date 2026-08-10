@@ -21,9 +21,9 @@ The review must cover migration from the published v0.1.8 data shape to storage 
 
 ## Automated evidence available
 
-On 2026-08-10, the final pre-commit working tree completed `npm test` with syntax checks for 79 JavaScript files, all 78/78 tests passing, and the release/system-boundary validator passing. The migration coverage demonstrated successful copy-and-verify behavior, idempotent reruns, staging-marker repair, and recovery after a simulated deletion failure without advancing the shared schema marker prematurely.
+On 2026-08-10, the committed candidate completed `npm test` with syntax checks for 79 JavaScript files, all 78/78 tests passing, and the release/system-boundary validator passing. The migration coverage demonstrated successful copy-and-verify behavior, idempotent reruns, staging-marker repair, and recovery after a simulated deletion failure without advancing the shared schema marker prematurely.
 
-That run was headless and used synthetic Actor and Item doubles. It is useful regression evidence, but it is neither exact-commit evidence nor a live Foundry migration result. The exact committed candidate still requires a fresh automated run and validated package evidence.
+That run was headless and used synthetic Actor and Item doubles. It is exact-commit regression evidence accompanied by a validated package, but it is not a live Foundry migration result.
 
 ## Fresh-world live evidence (not a migration rehearsal)
 

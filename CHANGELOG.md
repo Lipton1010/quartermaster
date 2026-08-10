@@ -48,7 +48,7 @@ _(Merge, installation, tagging, and publication remain gated on review of the mi
 - Preserve legacy D&D native and custom balances, rates, approval settings, resources, visible Items, notes, folders, logs, settings, and shortcut-token data.
 
 ### Verification
-- On 2026-08-10, the final pre-commit working tree passed syntax checks for 79 JavaScript files, all 78/78 headless tests, and the release/system-boundary validator. The exact committed candidate still requires a fresh automated run and validated package with checksum and inspected file list.
+- On 2026-08-10, the committed candidate passed syntax checks for 79 JavaScript files, all 78/78 headless tests, and the release/system-boundary validator. Its validated package contained 70 clean entries and emitted a manifest, SHA-256 checksum, and complete file list.
 - An isolated Foundry v14.365 / D&D 5e 5.3.3 smoke session verified fresh schema-1 storage creation, D&D load and native GP behavior, linked and synthetic Token Actor transfers, storage privacy, private hide/reveal, hostile boundary rejection without mutation, and pre-restart client reload behavior.
 - The process-level restart loaded the isolated world databases to `Complete`, but browser safety policy prevented a post-restart client reconnection. This is partial evidence only, not a completed matrix cell or proof of module client recovery after restart.
 - The other five live compatibility cells and the live v0.1.8 migration rehearsal remain pending and unprovisioned. See the [release gate](docs/RELEASE-GATE.md) and [migration report](docs/MIGRATION-REPORT.md).

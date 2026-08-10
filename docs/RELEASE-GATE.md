@@ -4,16 +4,16 @@ Quartermaster 1.0.0 is a release candidate. This gate is **closed** until every 
 
 ## Current decision
 
-**Not approved for release.** One isolated Foundry v14.365 / D&D 5e 5.3.3 session has produced substantial partial smoke evidence, but it does not complete that matrix cell. Five other compatibility cells, the live v0.1.8 migration rehearsal, the final committed test run, and committed package evidence remain pending.
+**Not approved for release.** The committed headless suite and package-integrity gate pass, and one isolated Foundry v14.365 / D&D 5e 5.3.3 session has produced substantial partial smoke evidence. That session does not complete its matrix cell; five other compatibility cells, post-restart client verification, and the live v0.1.8 migration rehearsal remain pending.
 
 ## Gate summary
 
 | Gate | Status | Evidence and next action |
 | --- | --- | --- |
-| Version and system-agnostic manifest | Passed on the final pre-commit working tree | `module.json` reported version `1.0.0`, no system relationship, and a version-specific download URL. Rerun on the final committed candidate. |
-| Headless automated suite | Passed on the final pre-commit working tree | On 2026-08-10, `npm test` reported 78/78 tests passed, syntax checks for 79 JavaScript files passed, and the release/system-boundary validator passed. This is not yet exact-commit evidence. |
-| Final automated rerun | Pending | Run `npm test` on the exact committed candidate that will be reviewed. Record the commit and complete output. |
-| Clean release package | Pending | Run `npm run package` only after the complete candidate is committed. Inspect and retain the validated ZIP, checksum, and file list from that same commit. |
+| Version and system-agnostic manifest | Passed on the committed candidate | `module.json` reports version `1.0.0`, no system relationship, and a version-specific download URL. |
+| Headless automated suite | Passed on the committed candidate | On 2026-08-10, `npm test` reported 78/78 tests passed, syntax checks for 79 JavaScript files passed, and the release/system-boundary validator passed. |
+| Final automated rerun | Passed | The complete suite was rerun from the clean committed candidate; exact commit evidence is retained with the build report. |
+| Clean release package | Passed | `npm run package` produced a validated 70-entry ZIP plus the archived manifest, SHA-256 checksum, and complete file list under `artifacts/system-agnostic`. |
 | Live Foundry compatibility matrix | In progress | The v14.365 / D&D 5e 5.3.3 cell has partial smoke evidence but is incomplete. The other five required environments are unprovisioned and pending. |
 | Live v0.1.8-to-v1 migration rehearsal | Pending | Use a backed-up clone or a representative synthetic Foundry world. The fresh-world schema initialization described below is not a legacy migration rehearsal. See [MIGRATION-REPORT.md](MIGRATION-REPORT.md). |
 | Documentation review | In progress | README and changelog identify the build as unreleased and point to this gate. Final release date and evidence must be added only after approval. |
