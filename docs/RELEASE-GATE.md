@@ -4,7 +4,7 @@ Quartermaster 1.0.0 is a release candidate. This gate is **closed** until every 
 
 ## Current decision
 
-**Not approved for release.** The committed headless suite and package-integrity gate pass, and one isolated Foundry v14.365 / D&D 5e 5.3.3 session has produced substantial partial smoke evidence. That session does not complete its matrix cell; five other compatibility cells, post-restart client verification, and the live v0.1.8 migration rehearsal remain pending.
+**Not approved for release.** The committed headless suite and package-integrity gate pass. All three required Foundry v14.365 matrix cells got complete live evidence against commit `6237480`; D&D 5e passed in full, but Pathfinder 2e and Custom System Builder both failed on a reproducible Item-transfer defect. That defect's root cause (an overly strict write-verification comparison that didn't tolerate a benign `undefined`-valued leaf in Item data) has since been fixed in commit `4ce4706` and covered by two new unit tests; live re-verification against the fixed candidate is in progress. A second, distinct Custom System Builder defect (native Actor-sheet drop handling bypassing Quartermaster's audit hook) remains open and unfixed. The three Foundry v13.351 cells remain unprovisioned. The live v0.1.8 migration rehearsal found and fixed a related defect and is being re-rehearsed; see [MIGRATION-REPORT.md](MIGRATION-REPORT.md).
 
 ## Gate summary
 
@@ -14,40 +14,109 @@ Quartermaster 1.0.0 is a release candidate. This gate is **closed** until every 
 | Headless automated suite | Passed on the committed candidate | On 2026-08-10, `npm test` reported 86/86 tests passed, syntax checks for 79 JavaScript files passed, and the release/system-boundary validator passed, on commit `6237480bca9ba9d69116216d30da731dbce604ec`. |
 | Final automated rerun | Passed | The complete suite was rerun from the clean committed candidate `6237480bca9ba9d69116216d30da731dbce604ec`; exact commit evidence is retained with the build report. |
 | Clean release package | Passed | `npm run package` produced a validated 67-entry ZIP (SHA-256 `5e7f0b7eca6dfe9e63a272c669d02c964615107a6f12f6d3c40e8ffec384c76e`) plus the archived manifest, checksum file, and complete file list under `artifacts/system-agnostic`. |
-| Live Foundry compatibility matrix | In progress | The v14.365 / D&D 5e 5.3.3 cell has partial smoke evidence but is incomplete. The other five required environments are unprovisioned and pending. |
+| Live Foundry compatibility matrix | **Blocked — fix landed, re-verification in progress** | All three v14.365 cells got complete live evidence on 2026-08-10 against commit `6237480`. D&D 5e 5.3.3 **passed** in full, including post-restart client reconnection. Pathfinder 2e 8.4.0 and Custom System Builder 6.0.2 both **failed**: Item transfer threw `canonical-transaction-log-verification-failed` whenever the transferred Item's raw data contained an `undefined`-valued field anywhere in its schema — always true for PF2e's native Treasure/coin Items, and always true for every Custom System Builder Item. Root cause fixed in commit `4ce4706` (see [CHANGELOG.md](../CHANGELOG.md)); live re-verification against the fixed candidate is running. Custom System Builder also has a second, distinct, still-open defect: native Actor-sheet drop handling bypasses Quartermaster's `dropActorSheetData` audit hook entirely. The three v13.351 cells are unprovisioned (Foundry 13.351 is not installed locally; see below). |
 | Live v0.1.8-to-v1 migration rehearsal | Pending | Use a backed-up clone or a representative synthetic Foundry world. The fresh-world schema initialization described below is not a legacy migration rehearsal. See [MIGRATION-REPORT.md](MIGRATION-REPORT.md). |
 | Documentation review | In progress | README and changelog identify the build as unreleased and point to this gate. Final release date and evidence must be added only after approval. |
 | Merge, tag, manual installation, and publication | Not authorized | Each remains a separate user-authorized operation after this gate is approved. |
 
 ## Required live Foundry matrix
 
-`Partial` means useful live evidence exists but one or more required checks remain incomplete. `Pending` means no matrix result has been supplied. `Unprovisioned` describes the current test environment, not product compatibility.
+`Passed` means every required check in "Minimum live checks for every matrix cell" was exercised and produced the expected result. `Failed` means the cell was fully exercised and at least one required check did not pass; the specific defect is documented in the evidence section below. `Pending` means no matrix result has been supplied. `Unprovisioned` describes the current test environment, not product compatibility.
 
 | Foundry VTT | Game system | Required system version | Test status | Environment | Result notes |
 | --- | --- | --- | --- | --- | --- |
-| 14.365 | D&D 5e | 5.3.3 | Partial | Isolated local data path | The smoke checks below passed, but post-restart module client recovery and the full cell checklist were not completed. |
-| 14.365 | Pathfinder 2e | 8.3.0 | Pending | Unprovisioned | No live result supplied. |
-| 14.365 | Custom System Builder | 6.0.2 | Pending | Unprovisioned | No live result supplied. |
-| 13.351 | D&D 5e | 5.3.3 | Pending | Unprovisioned | No live result supplied. |
-| 13.351 | Pathfinder 2e | 7.12.2 | Pending | Unprovisioned | No live result supplied. |
-| 13.351 | Custom System Builder | 5.2.1 | Pending | Unprovisioned | No live result supplied. |
+| 14.365 | D&D 5e | 5.3.3 | **Passed** | Isolated local data path (`test-data/v14-dnd5e`) | Full checklist passed on 2026-08-10, including the previously-missing post-restart client reconnection. See evidence below. |
+| 14.365 | Pathfinder 2e | 8.4.0 (see deviation note) | **Failed against `6237480`; fix landed in `4ce4706`, re-verification pending** | Isolated local data path (`test-data/v14-dnd5e`, world `quartermaster-v14-pf2e-isolated`) | All checks passed except the required native-currency exercise: PF2e Treasure/coin Item ingress reproducibly failed with `canonical-transaction-log-verification-failed`. See defect writeup below. |
+| 14.365 | Custom System Builder | 6.0.2 | **Failed against `6237480`; one defect fixed in `4ce4706`, one still open, re-verification pending** | Isolated local data path (`test-data/v14-dnd5e`, world `quartermaster-v14-csb-isolated`) | Generic-currency (`CUR`) exercise, privacy, hostile-request rejection, hide/reveal, and reload/restart/reconnect all passed. Item transfer was broken for every Item in this system (same root cause as the PF2e defect, now fixed). A second, distinct, still-open defect lets CSB's native Actor-sheet drop handling bypass Quartermaster's audited egress pipeline entirely. See defect writeups below. |
+| 13.351 | D&D 5e | 5.3.3 | Pending / Unprovisioned | Not installed | Foundry 13.351 is not installed on this machine. Obtaining it requires downloading a build from the user's own Foundry account; this was not attempted per task scope. |
+| 13.351 | Pathfinder 2e | 7.12.2 | Pending / Unprovisioned | Not installed | Same as above. |
+| 13.351 | Custom System Builder | 5.2.1 | Pending / Unprovisioned | Not installed | Same as above. |
 
-## Partial v14.365 / D&D 5e 5.3.3 evidence
+## v14.365 / D&D 5e 5.3.3 evidence — Passed
 
-The 2026-08-10 smoke session used a separate Foundry data path under `test-data/v14-dnd5e`; it did not open a production world or modify the installed module. It verified:
+Tester: automated verification session. Date: 2026-08-10. Platform: Windows 11, Foundry v14 Build 365, headless `node main.js`, isolated data path `test-data/v14-dnd5e` (world `quartermaster-v14-dnd-isolated`). This session did not open a production world or modify the installed module. The v1 candidate module (`artifacts/system-agnostic/module.zip`, SHA-256 `5e7f0b7eca6dfe9e63a272c669d02c964615107a6f12f6d3c40e8ffec384c76e`) was freshly re-extracted into the isolated `Data/modules/quartermaster` folder before testing (the folder previously held a mismatched 102-file tree from an earlier session; a clean 59-file extraction from the validated zip replaced it).
+
+An earlier 2026-08-09 partial session had already established, and this session re-confirmed by direct inspection before the restart:
 
 - fresh schema-1 initialization and creation of separate shared and private storage Actors;
-- storage-Actor suppression from the sidebar and the expected shared, Loot Prep, and transaction-log buttons;
-- the D&D 5e `0 / 500 lb` load display and a native GP mutation;
+- storage-Actor suppression from the sidebar (only the player-owned `Test Hero` Actor listed; both `Quartermaster Vault` and `Quartermaster Staging` absent) and the expected `Shared Party Inventory`, `GM Loot Prep`, and `Transaction Log` buttons;
+- the D&D 5e `0 lb / 500 lb` load display and a native GP mutation;
 - a GM linked-Actor Item round trip and a player-owned linked-Actor egress;
 - GM hide to private staging, Player2 invisibility, and GM reveal back to shared storage;
 - Player2 storage privacy and absence of GM-only controls;
 - rejection of a hostile same-Actor/direction request as `invalid-transfer-boundary`, with no Item mutation;
-- synthetic Token Actor ingress and egress, with the Item returned to its source;
-- a healthy client reload before the server restart; and
-- a process-level server/world restart whose world databases reached `Complete`.
+- synthetic Token Actor ingress and egress, with the Item returned to its source; and
+- a healthy client reload before the server restart.
 
-Browser safety policy prevented reconnecting a client after that process restart. Therefore this evidence does **not** establish post-restart module client recovery, and the matrix cell remains incomplete.
+**This session's addition — the previously-missing check.** The Foundry process was stopped (`Stop-Process`) and relaunched clean against the same data path and port. A client reconnected via the browser tool, launched the world, and logged in as Gamemaster:
+
+- the server logged `Launching World | Complete` and a clean `Server started and listening on port 30001`, with no lock-file conflicts on this cycle;
+- the Quartermaster console sequence was clean: `Ready`, `Backing actor present: Quartermaster Vault (...)`, `Staging actor present: Quartermaster Staging (...)`, `Operation coordinator initialized`, `Socket handler registered (authenticated query: yes)`, `v1.0.0 loaded`, with no errors besides the benign, expected `WebSocket ... failed` / `lost connection` entries left over from the *old*, now-dead socket as the browser tab reconnected — the *new* socket connected cleanly;
+- `game.ready` was `true`, all three Actors (`Quartermaster Staging`, `Quartermaster Vault`, `Test Hero`) were present and intact, the sidebar directory still listed only `Test Hero`, and all three Quartermaster toolbar buttons were present and functional;
+- opening `Shared Party Inventory` rendered correctly post-restart (`0 lb / 500 lb`, `1 GP`, vault contents unchanged from before the restart).
+
+No console errors were observed after reconnection other than the expected stale-socket entries described above. This closes the previously-open item; the D&D 5e 5.3.3 cell is **Passed** with no known defects.
+
+## v14.365 / Pathfinder 2e 8.4.0 evidence — Failed (native-currency defect)
+
+Tester: automated verification session. Date: 2026-08-10. Platform: Windows 11, Foundry v14 Build 365, headless `node main.js`, isolated data path `test-data/v14-dnd5e` (world `quartermaster-v14-pf2e-isolated`, created fresh for this cell).
+
+**Deviation from the matrix.** The task specified Pathfinder 2e 8.3.0. Foundry's package browser (`Install System`) only offers the current release, which was 8.4.0 (verified for Foundry 14.365) at test time; no version picker or older-release manifest was available through the normal install UI, and no login/credential wall was encountered installing it. Testing proceeded against 8.4.0 as the closest available official build; 8.3.0 was not separately obtained.
+
+**Setup.** Installed the "Pathfinder Second Edition" system (stwlam, v8.4.0) via the in-app package browser — no login required. Created a new world bound to `pf2e`, enabled Quartermaster via Module Management, and confirmed a clean schema-1 initialization (`Quartermaster | Ready`, `Backing actor created: Quartermaster Vault`, `Staging actor created: Quartermaster Staging`, `Storage migration to schema 1 complete`, `v1.0.0 loaded`, no errors). Created a linked PC Actor ("Test Hero PF2e", owned by a new `Player2` user) with a compendium `Dagger` Item and native PF2e coin Items (15 gp, 5 sp via `actor.inventory.addCoins`), plus an unlinked Token Actor ("Synthetic Token Source") on the default scene.
+
+**Passed checks:**
+
+- Sidebar suppression for both GM and Player2 — only player-owned/visible Actors listed, both storage Actors absent.
+- Linked-Actor Item round trip: the `Dagger` moved cleanly vault-ward and back (ingress then egress), confirmed removed from the source and present at the destination each time, with matching `transfer.ingress.commit` / `transfer.egress.commit` transaction-log entries.
+- Unlinked Token Actor Item round trip: same result using the synthetic token's item, via its `Scene.<id>.Token.<id>.Actor.<id>.Item.<id>` UUID.
+- Native currency **display**: the Currency Manager and inventory panel correctly showed PF2e's real PP/GP/SP/CP denominations with correct exchange rates (`1 PP = 10 GP`, `1 SP = 0.1 GP`, `1 CP = 0.01 GP`) and PF2e's native "1,000 coins per Bulk" rule — this is the system's actual currency model, not the generic `CUR` fallback.
+- Load/value fields: the `Dagger` correctly showed PF2e bulk (`L`) and price (`2 SP`) supplied by the adapter.
+- Player privacy: Player2's `Shared Party Inventory` panel showed no `Manage Currencies` or `Create Item` buttons (GM-only, correctly hidden); the hidden `Dagger` did not appear ("The vault is empty") while staged; `api.ui.openLootPrep()` was a silent no-op for Player2 (GM-only app, correctly refused). *Caveat:* Foundry's client-side architecture syncs full Actor/flag data (including the GM-only staging Actor's canonical transaction log with raw Item snapshots) to every connected client regardless of ownership; a technically capable player could read this via the browser console. Quartermaster's own API and UI both correctly gate on `game.user.isGM` and this is not unique to Quartermaster — it is a general Foundry VTT platform trait — but it means the privacy boundary is enforced at the application layer, not by withholding data from the wire.
+- Hostile-request rejection: a same-Actor/same-boundary request was rejected `invalid-transfer-boundary`; a request sourced from an Actor the requesting player did not own was rejected `source-actor-not-owned`; a direct attempt by Player2 to egress a *staged* (GM-only) Item straight to their own Actor, bypassing reveal, was rejected `invalid-transfer-boundary`. No Item mutation occurred in any case.
+- Hide/reveal: GM hid the `Dagger` to staging (moved off the vault, appeared on staging, invisible to Player2's live-open inventory panel), then revealed it; Player2's already-open panel updated live via socket push to show the `Dagger` again, with correct bulk/price, with no manual refresh.
+- Reload/restart/reconnect: Player2's client reload preserved session and vault state. A full server-process restart and reconnect of both the GM and Player2 clients produced a clean Quartermaster init sequence, an intact module/world, correct sidebar suppression, and no new console errors for either client.
+
+**Failed check — required native-currency exercise.**
+
+Dragging a native PF2e coin Item (`Gold Pieces` or `Silver Pieces`, both untouched, straight-from-compendium Treasure Items) from the linked Actor onto the `Shared Party Inventory` drop zone reproducibly fails. The client console shows:
+
+```
+Quartermaster | drop received {hasData: true, type: Item, uuid: Actor.<id>.Item.<id>}
+Quartermaster | realItemTransfer threw Error: canonical-transaction-log-verification-failed
+    at scripts/async-lock.js:49:14
+Transfer failed: canonical-transaction-log-verification-failed
+```
+
+**Root cause.** `scripts/transaction-log.js`'s `writeVerifiedLog()` writes the transfer's claim entry (which embeds a full raw snapshot of the Item being moved, `itemData: sourceItem.toObject()`, per `scripts/claim-commit.js`) via `actor.setFlag(...)`, then immediately reads the flag back via `actor.getFlag(...)` and deep-compares it against the value it intended to write; a mismatch throws `${label}-verification-failed`. The "intended" value is built with `foundry.utils.deepClone`, which preserves object keys whose value is `undefined`. Real Foundry flag persistence does not: any key with an `undefined` value is silently dropped on the actual write/read round-trip. `Gold Pieces`/`Silver Pieces` (and every stock PF2e Treasure Item checked, including straight from the `pf2e.equipment-srd` compendium, untouched) carry `system.price.sizeSensitive === undefined`. That one key is present in the "intended" clone and absent from the "retained" read-back, so the verification always fails and the ingress claim is aborted before any Item is created or deleted. This is **not** an artifact of this test's setup — it reproduced identically against a fresh, unmodified compendium `Gold Pieces` Item on a second attempt, and against a different coin (`Silver Pieces`) on a third.
+
+**Impact.** PF2e's native currency is coin-denomination Treasure Items, not a flat currency object — so this defect makes it categorically impossible to move PF2e coins into or out of the Quartermaster vault via the normal drag-and-drop transfer flow. It does **not** affect the Currency Manager's display of existing coin totals, and it does not affect non-Treasure Items that happen not to carry an undefined-valued field (the `Dagger` and the synthetic token's item both transferred cleanly, matching a compendium check that found zero undefined fields in the `Dagger`'s raw data). **No data loss or duplication occurs** — the module's create-first, claim-before-mutate design means the failure is caught before either document is touched, and world state was verified consistent (source item and coin totals unchanged) after every failed attempt.
+
+**Suggested fix direction (not implemented as part of this verification):** either strip/normalize `undefined`-valued keys from both sides of the `writeVerifiedLog` comparison before the deep-equality check (e.g., round-trip the "intended" value through the same `JSON.parse(JSON.stringify(...))` normalization already used elsewhere in this file for `clone()`), or compare against a second `getFlag` read taken through the same normalization the retained value already receives.
+
+## v14.365 / Custom System Builder 6.0.2 evidence — Failed (two defects)
+
+Tester: automated verification session. Date: 2026-08-10. Platform: Windows 11, Foundry v14 Build 365, headless `node main.js`, isolated data path `test-data/v14-dnd5e` (world `quartermaster-v14-csb-isolated`, created fresh for this cell).
+
+**Setup required.** Installed "Custom System Builder" (LinkedFluuuush, v6.0.2, verified for 14.365) via the package browser — no login required. World creation initially failed ("The World could not be created as required dependencies were not installed") because Foundry's dependency dialog listed two auto-installable dependencies (`_chatcommands` 2.0.6, `statuscounter` 3.1.2) as merely "optional" but still gated world creation on their presence; a third, manual-only dependency (`dfreds-convenient-effects`) has no version compatible with this Foundry/system combination and was left uninstalled since it was not required to proceed. Installing the two auto-installable dependencies allowed world creation to complete. Because Custom System Builder is a blank template-authoring system with no actor types until the GM configures one, and no built-in Quartermaster adapter, enabling the module surfaced Quartermaster's own **"Confirm Storage Type"** dialog ("Custom System Builder does not have a built-in Quartermaster adapter. Choose the Actor type Quartermaster should use for its private and shared storage.") — this is exactly the minimal, module-provided setup step the release-gate anticipated for an unsupported system. `character` (CSB's only real actor type) was selected and storage was created successfully, confirming the generic-adapter fallback path (`GENERIC_CURRENCY_ID`, `qm-cur-default`) is reachable and functional for a genuinely unknown system.
+
+**Passed checks:**
+
+- Generic-currency exercise: the `Manage Currencies` → `Add Currency` quick-add flow (10 `CUR`) correctly mutated and persisted the vault's `CUR` balance; the inventory panel correctly showed `10 CUR` with no native-currency UI (matching the generic adapter's declared `nativeCurrencies: false, load: false` capabilities).
+- Sidebar suppression for both GM and Player2.
+- Hostile-request rejection: a same-Actor/same-boundary request was rejected `invalid-transfer-boundary`; a request sourced from an unowned Actor was rejected `source-actor-not-owned`. Both rejections happen at client-side/coordinator validation, before the flawed log-write step below, so they are unaffected by either defect.
+- Hide/reveal: a vault-resident Item (created directly via the panel's `Create Item` button, which does not go through the transfer pipeline) was hidden to staging, confirmed invisible to Player2, and revealed back to the shared vault correctly.
+- Reload/restart/reconnect: both GM and Player2 clients survived a full server-process restart with a clean Quartermaster init sequence, correct sidebar suppression, and persisted vault contents (Item and `CUR` balance both intact).
+
+**Failed check 1 — Item ingress, same root cause as the Pathfinder 2e defect, but affecting every Item.**
+
+Dragging a freshly created CSB Item ("Test Widget", type `equippableItem`, no unusual configuration) from a linked Actor onto the vault fails identically: `canonical-transaction-log-verification-failed`. Inspecting the Item's raw data found four `undefined`-valued keys inherent to Custom System Builder's own item template schema: `system.templateSystemUniqueVersion`, `system.uniqueId`, `system.template`, `system.container`. Because these fields are part of CSB's core item-template machinery, they are present (and `undefined`, pending a template being assigned) on essentially every CSB Item — meaning this is not a corner case for this system, it is the default state, and **Item ingress via drag-and-drop into the Quartermaster vault does not work at all for Custom System Builder**, for the same root cause documented above. Direct Item creation via the panel's own `Create Item` button (which bypasses the transfer/claim pipeline) is unaffected and works normally.
+
+**Failed check 2 — a second, distinct defect: CSB's Actor sheet does not honor Quartermaster's egress interception.**
+
+Testing egress by simulating a drag of a vault-resident Item onto a CSB Actor sheet produced an unexpected result: the Actor received a copy of the Item (retaining the *same* document ID as the vault original, indicating `keepId: true` semantics), but the vault's copy was **not removed** — instead a **second, new-ID copy** of the same Item appeared in the vault afterward. Querying `api.transactionLogQuery` found **zero** `transfer.egress.*` log entries anywhere in the log for this operation. Combined, this means: Quartermaster's own `submitEgressRequest` → `performTransfer` pipeline never ran (or exited before any log write) for this drop, yet an Item was still created on the destination Actor with the source's ID preserved — behavior consistent with Custom System Builder's own Actor-sheet drop handling processing the drop natively and independently of Quartermaster's `Hooks.on("dropActorSheetData", ...)` interceptor, which is supposed to `return false` and suppress exactly this default behavior (see `scripts/drag-drop.js`, `registerEgressInterceptor`). The net effect is an **unaudited, untracked Item duplication** with no transaction-log record and no confirmation that the vault-side deletion Quartermaster's pipeline would normally perform ever happened. This is a second, independent defect from the ingress failure above and should be investigated and fixed separately — it represents a real integrity/audit gap for this specific system, not merely a UX inconvenience. It was not further characterized (e.g., whether it reproduces on every egress attempt or only under specific conditions) due to session time constraints; a focused follow-up session should reproduce it deliberately and trace CSB's own sheet drop-handling code to confirm the mechanism.
+
+**Impact.** Combined with the ingress defect, Custom System Builder support in this build is not usable for its core purpose (moving Items through the vault); only the generic-currency path and direct panel-side Item creation/hide/reveal are unaffected.
 
 ## Minimum live checks for every matrix cell
 
