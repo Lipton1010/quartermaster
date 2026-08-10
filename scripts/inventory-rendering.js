@@ -14,6 +14,7 @@ import { MODULE_ID, FLAGS, SETTINGS, CHOICES } from "./constants.js";
 import { getRawTotals } from "./weight-cache.js";
 import { getCurrencies, getReferenceCurrency } from "./currencies.js";
 import { getActiveSystemAdapter } from "./system-adapters/registry.js";
+import { isActiveStorageGM } from "./storage-ledger.js";
 
 /**
  * Build the full rendering context for an inventory popup render.
@@ -94,7 +95,7 @@ export function buildInventoryContext(actor) {
     hasLoad: adapter.capabilities.load === true,
     loadUnit: adapter.loadUnit ?? null,
     loadUnitLabel: adapter.loadUnit?.label ?? null,
-    isGM: game.user.isGM,
+    isGM: isActiveStorageGM(),
     inventoryLabel: settings.inventoryButtonLabel,
     hasBackgroundImage: Boolean(settings.inventoryBackgroundImage),
     backgroundImageSrc: settings.inventoryBackgroundImage,

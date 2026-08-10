@@ -4,7 +4,11 @@ import { MODULE_ID, MODULE_TITLE, FLAGS } from "./constants.js";
 import { getBackingActor, getStagingActor } from "./backing-actor.js";
 import { writeEntry } from "./transaction-log.js";
 import { writeRecoveryRecord } from "./recovery-records.js";
-import { isActiveStorageGM, requireActiveStorageGM } from "./storage-ledger.js";
+import {
+  isActiveStorageGM,
+  requireActiveStorageGM,
+  withStorageLedgerLock
+} from "./storage-ledger.js";
 
 /**
  * Return private staged items. During an interrupted schema-0 migration,
@@ -46,29 +50,43 @@ export async function setItemHidden(itemId, hidden) {
     return null;
   }
 
-  const inBacking = backing.items.get(itemId);
-  const inStaging = staging.items.get(itemId);
-  if (hidden) {
-    if (inStaging) {
-      if (inStaging.getFlag(MODULE_ID, FLAGS.HIDDEN) !== true) {
-        requireActiveStorageGM();
-        await inStaging.setFlag(MODULE_ID, FLAGS.HIDDEN, true);
+  let outcome;
+  try {
+    outcome = await withStorageLedgerLock(async () => {
+      requireActiveStorageGM();
+      // Resolve inside the critical section. Two rapid clicks must observe the
+      // first completed move instead of both creating a destination copy.
+      const inBacking = backing.items.get(itemId);
+      const inStaging = staging.items.get(itemId);
+      if (hidden) {
+        if (inStaging) {
+          if (inStaging.getFlag(MODULE_ID, FLAGS.HIDDEN) !== true) {
+            await inStaging.setFlag(MODULE_ID, FLAGS.HIDDEN, true);
+          }
+          return { item: inStaging, recoveryRecord: null };
+        }
+        if (!inBacking) return { item: null, recoveryRecord: null };
+        return moveStorageItemUnlocked(inBacking, staging, { hidden: true, operation: "hide" });
       }
-      return inStaging;
-    }
-    if (!inBacking) return null;
-    return moveStorageItem(inBacking, staging, { hidden: true, operation: "hide" });
+
+      if (inBacking) {
+        if (inBacking.getFlag(MODULE_ID, FLAGS.HIDDEN) === true) {
+          await inBacking.unsetFlag(MODULE_ID, FLAGS.HIDDEN);
+        }
+        return { item: inBacking, recoveryRecord: null };
+      }
+      if (!inStaging) return { item: null, recoveryRecord: null };
+      return moveStorageItemUnlocked(inStaging, backing, { hidden: false, operation: "reveal" });
+    });
+  } catch (error) {
+    console.error(`${MODULE_TITLE} | setItemHidden failed`, error);
+    return null;
   }
 
-  if (inBacking) {
-    if (inBacking.getFlag(MODULE_ID, FLAGS.HIDDEN) === true) {
-      requireActiveStorageGM();
-      await inBacking.unsetFlag(MODULE_ID, FLAGS.HIDDEN);
-    }
-    return inBacking;
-  }
-  if (!inStaging) return null;
-  return moveStorageItem(inStaging, backing, { hidden: false, operation: "reveal" });
+  // Recovery records use the same non-reentrant storage ledger. Persist them
+  // only after the Item-move critical section has been released.
+  if (outcome?.recoveryRecord) await writeRecoveryRecord(outcome.recoveryRecord);
+  return outcome?.item ?? null;
 }
 
 export async function revealItem(itemId, opts = {}) {
@@ -112,46 +130,52 @@ export async function revealItems(itemIds, opts = {}) {
 
 export async function deleteHiddenItem(itemId) {
   if (!isActiveStorageGM()) return { status: "failed", error: "active-gm-only" };
-  const item = findHiddenItem(itemId);
-  if (!item) return { status: "failed", itemId, error: "item-not-found" };
-  const itemName = item.name ?? "(unknown)";
-  let deleteWarning = null;
   try {
-    try {
+    const deleted = await withStorageLedgerLock(async () => {
       requireActiveStorageGM();
-      await item.parent.deleteEmbeddedDocuments("Item", [item.id]);
-      if (item.parent.items?.get?.(item.id)) {
-        throw new Error("delete-did-not-remove-item");
+      const item = findHiddenItem(itemId);
+      if (!item) return { status: "failed", itemId, error: "item-not-found" };
+      const itemName = item.name ?? "(unknown)";
+      let deleteWarning = null;
+      try {
+        await item.parent.deleteEmbeddedDocuments("Item", [item.id]);
+        if (item.parent.items?.get?.(item.id)) {
+          throw new Error("delete-did-not-remove-item");
+        }
+      } catch (deleteError) {
+        // Embedded-document hooks may throw after Foundry has already committed
+        // the deletion. Treat that as success so callers do not claim the
+        // private Item still exists or try to delete a replacement copy.
+        if (typeof item.parent.items?.get === "function"
+            && !item.parent.items.get(item.id)) {
+          deleteWarning = String(deleteError?.message ?? deleteError);
+          console.warn(`${MODULE_TITLE} | hidden item delete reported an error after removal`, deleteError);
+        } else {
+          throw deleteError;
+        }
       }
-    } catch (deleteError) {
-      // Embedded-document hooks may throw after Foundry has already committed
-      // the deletion. Treat that as success so callers do not claim the
-      // private Item still exists or try to delete a replacement copy.
-      if (typeof item.parent.items?.get === "function"
-          && !item.parent.items.get(item.id)) {
-        deleteWarning = String(deleteError?.message ?? deleteError);
-        console.warn(`${MODULE_TITLE} | hidden item delete reported an error after removal`, deleteError);
-      } else {
-        throw deleteError;
-      }
-    }
+      return { status: "success", itemId, itemName, deleteWarning };
+    });
+    if (deleted.status !== "success") return deleted;
     await writeEntry({
       type: "hidden.deleted",
       requestId: `qm-hidden-delete-${itemId}-${Date.now()}`,
       userId: game.user.id,
       itemId,
-      itemName,
+      itemName: deleted.itemName,
       backingActorId: getBackingActor()?.id
     });
     return {
       status: "success",
       itemId,
-      itemName,
-      ...(deleteWarning ? { warning: "delete-hook-error-after-removal", detail: deleteWarning } : {})
+      itemName: deleted.itemName,
+      ...(deleted.deleteWarning
+        ? { warning: "delete-hook-error-after-removal", detail: deleted.deleteWarning }
+        : {})
     };
   } catch (error) {
     console.error(`${MODULE_TITLE} | deleteHiddenItem: error for ${itemId}`, error);
-    return { status: "failed", itemId, itemName, error: String(error?.message ?? error) };
+    return { status: "failed", itemId, error: String(error?.message ?? error) };
   }
 }
 
@@ -167,8 +191,11 @@ export async function stageHiddenItem(sanitizedData) {
     [FLAGS.HIDDEN]: true
   };
   try {
-    requireActiveStorageGM();
-    const [created] = await staging.createEmbeddedDocuments("Item", [data], { keepId: true });
+    const created = await withStorageLedgerLock(async () => {
+      requireActiveStorageGM();
+      const [item] = await staging.createEmbeddedDocuments("Item", [data], { keepId: true });
+      return item ?? null;
+    });
     if (!created) return { status: "failed", error: "create-returned-empty" };
     await writeEntry({
       type: "hidden.staged",
@@ -192,7 +219,7 @@ function findHiddenItem(itemId) {
   return legacy?.getFlag(MODULE_ID, FLAGS.HIDDEN) === true ? legacy : null;
 }
 
-async function moveStorageItem(sourceItem, destinationActor, { hidden, operation }) {
+async function moveStorageItemUnlocked(sourceItem, destinationActor, { hidden, operation }) {
   requireActiveStorageGM();
   const sourceActor = sourceItem.parent;
   const requestId = `qm-storage-${operation}-${sourceItem.id}-${Date.now()}`;
@@ -227,11 +254,11 @@ async function moveStorageItem(sourceItem, destinationActor, { hidden, operation
       if (typeof sourceActor.items?.get === "function"
           && !sourceActor.items.get(sourceItem.id)) {
         console.warn(`${MODULE_TITLE} | ${operation} source delete reported an error after removal`, deleteError);
-        return created;
+        return { item: created, recoveryRecord: null };
       }
       throw deleteError;
     }
-    return created;
+    return { item: created, recoveryRecord: null };
   } catch (error) {
     let compensationError = null;
     if (created) {
@@ -247,8 +274,8 @@ async function moveStorageItem(sourceItem, destinationActor, { hidden, operation
         if (!destinationGone) compensationError = compensationFailure;
       }
     }
-    if (compensationError) {
-      await writeRecoveryRecord({
+    const recoveryRecord = compensationError
+      ? {
         requestId,
         operation: `storage.${operation}`,
         status: "failed",
@@ -259,10 +286,10 @@ async function moveStorageItem(sourceItem, destinationActor, { hidden, operation
         itemSnapshot: data,
         error: String(error?.message ?? error),
         compensationError: String(compensationError?.message ?? compensationError)
-      });
-    }
+      }
+      : null;
     console.error(`${MODULE_TITLE} | ${operation} move failed`, error);
-    return null;
+    return { item: null, recoveryRecord };
   }
 }
 

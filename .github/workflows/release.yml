@@ -1,4 +1,4 @@
-name: Publish reviewed Quartermaster release
+name: Build reviewed Quartermaster release
 
 on:
   workflow_dispatch:
@@ -13,7 +13,6 @@ permissions:
 
 jobs:
   release:
-    environment: foundry-publication
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,24 +40,3 @@ jobs:
           ../../artifacts/system-agnostic/module.zip.sha256
           ../../artifacts/system-agnostic/module.zip.contents.txt
           --generate-notes --verify-tag
-      - name: Validate Foundry publication request
-        uses: djlechuck/foundryvtt-publish-package-action@d820ed8ad65408b23f9a80d2120aeeed142c1856 # v1.1.1
-        with:
-          token: ${{ secrets.FOUNDRY_API_TOKEN }}
-          dry-run: true
-          id: quartermaster
-          version: 1.0.0
-          manifest: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/module.json
-          notes: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}
-          compatibility-minimum: '13'
-          compatibility-verified: '14.365'
-      - name: Publish to Foundry VTT
-        uses: djlechuck/foundryvtt-publish-package-action@d820ed8ad65408b23f9a80d2120aeeed142c1856 # v1.1.1
-        with:
-          token: ${{ secrets.FOUNDRY_API_TOKEN }}
-          id: quartermaster
-          version: 1.0.0
-          manifest: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/module.json
-          notes: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}
-          compatibility-minimum: '13'
-          compatibility-verified: '14.365'

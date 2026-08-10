@@ -5,7 +5,11 @@ import { getBackingActor, getStagingActor } from "./backing-actor.js";
 import { writeEntry } from "./transaction-log.js";
 import { getCurrency, applyCurrencyDelta, roundCurrency } from "./currencies.js";
 import { readRecoveryRecords, writeRecoveryRecord } from "./recovery-records.js";
-import { executeOperation } from "./operation-coordinator.js";
+import {
+  executeOperation,
+  getRequestAgeMaxMs,
+  inspectRequestReplay
+} from "./operation-coordinator.js";
 import { requireActiveStorageGM, withStorageLedgerLock } from "./storage-ledger.js";
 
 const REVEAL_OPERATION_TYPE = "hiddenCurrencyReveal";
@@ -31,6 +35,9 @@ export async function addHiddenCurrency(type, amount, folderId = null) {
   }
   const currency = getCurrency(type, backing);
   if (!currency) return { status: "failed", error: "invalid-type" };
+  if (currency.wholeUnitsOnly && !Number.isInteger(normalizedAmount)) {
+    return { status: "failed", error: "whole-coins-required" };
+  }
 
   const entry = {
     id: `qm-hc-${foundry.utils.randomID()}`,
@@ -109,13 +116,25 @@ export async function revealHiddenCurrency(entryId, { notify = true } = {}) {
   const prepared = await prepareRevealRequest(staging, entryId);
   if (prepared.status !== "success") return prepared;
   const entry = prepared.entry;
-  const currencyId = entry.currencyId ?? entry.type;
-  const currency = getCurrency(currencyId, backing);
-  if (!currency) return { status: "failed", error: "currency-not-found" };
-
   const requestId = entry.revealRequestId;
   if (hasPendingRecovery(requestId)) {
     return { status: "failed", error: "recovery-reconciliation-required", requestId };
+  }
+  const currencyId = entry.currencyId ?? entry.type;
+  const currency = getCurrency(currencyId, backing);
+  if (!currency) {
+    const replay = inspectRequestReplay({
+      requestId,
+      requester: game.user.id,
+      operationType: REVEAL_OPERATION_TYPE,
+      timestamp: entry.revealRequestedAt,
+      requestData: buildRevealRequestData(entry)
+    });
+    if (isUnsafeRevealReplay(replay)) {
+      return { status: "failed", error: "recovery-reconciliation-required", requestId };
+    }
+    await clearRevealRequestStamp(staging, new Set([entry.id]), entry.revealRequestId);
+    return { status: "failed", error: "currency-not-found" };
   }
 
   const requestData = buildRevealRequestData(entry);
@@ -138,6 +157,14 @@ export async function revealHiddenCurrency(entryId, { notify = true } = {}) {
   if (notify && result.status === "success") {
     const label = `${entry.amount} ${currency.symbol}`;
     ui.notifications?.info?.(`${label} added to vault.`);
+  }
+  if (result.status !== "success" && isSafelyRetryableRevealFailure(result)) {
+    const retryReady = await clearRevealRequestStamp(
+      staging,
+      new Set([entry.id]),
+      entry.revealRequestId
+    );
+    return { ...result, retryReady };
   }
   return result;
 }
@@ -174,11 +201,37 @@ async function prepareRevealRequest(staging, entryId) {
       if (index < 0) return { status: "failed", error: "not-found" };
 
       const current = existing[index];
-      const revealRequestId = cleanRequestId(current.revealRequestId)
-        ?? `${REVEAL_REQUEST_PREFIX}-${current.id}-${foundry.utils.randomID()}`;
-      const revealRequestedAt = validTimestamp(current.revealRequestedAt)
+      const persistedRequestId = cleanRequestId(current.revealRequestId);
+      const persistedTimestamp = validTimestamp(current.revealRequestedAt)
         ? current.revealRequestedAt
-        : Date.now();
+        : null;
+      let revealRequestId = persistedRequestId;
+      let revealRequestedAt = persistedTimestamp;
+
+      if (persistedRequestId && persistedTimestamp
+          && Date.now() - persistedTimestamp > getRequestAgeMaxMs()) {
+        const replay = inspectRequestReplay({
+          requestId: persistedRequestId,
+          requester: game.user.id,
+          operationType: REVEAL_OPERATION_TYPE,
+          timestamp: persistedTimestamp,
+          requestData: buildRevealRequestData(current)
+        });
+        // An expired pending/unverifiable claim may represent a committed
+        // credit whose cleanup never finished. Never replace its identity.
+        if (isUnsafeRevealReplay(replay)) {
+          return {
+            status: "failed",
+            error: "recovery-reconciliation-required",
+            requestId: persistedRequestId
+          };
+        }
+        revealRequestId = null;
+        revealRequestedAt = null;
+      }
+
+      revealRequestId ??= `${REVEAL_REQUEST_PREFIX}-${current.id}-${foundry.utils.randomID()}`;
+      revealRequestedAt ??= Date.now();
       const entry = { ...current, revealRequestId, revealRequestedAt };
 
       if (current.revealRequestId !== revealRequestId
@@ -209,6 +262,28 @@ async function prepareRevealRequest(staging, entryId) {
       details: errorMessage(error)
     };
   }
+}
+
+function isSafelyRetryableRevealFailure(result) {
+  return new Set([
+    "currency-not-found",
+    "invalid-currency-type",
+    "invalid-delta",
+    "whole-coins-required",
+    "insufficient-funds",
+    "not-found",
+    "staged-entry-changed",
+    "claim-log-unavailable",
+    "request-too-old",
+    "request-too-far-in-future"
+  ]).has(result?.error);
+}
+
+function isUnsafeRevealReplay(replay) {
+  return replay?.state === "pending"
+    || replay?.state === "unverifiable"
+    || replay?.state === "collision"
+    || (replay?.state === "replay" && replay.result?.status === "success");
 }
 
 async function performCurrencyReveal({

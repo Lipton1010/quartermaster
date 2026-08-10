@@ -210,6 +210,7 @@ export function buildStorageActorData({
     moduleFlags[FLAGS.STAGING_ACTOR_MARKER] = true;
     moduleFlags[FLAGS.HIDDEN_CURRENCY] = [];
     moduleFlags[FLAGS.LOOT_PREP_FOLDERS] = [];
+    moduleFlags[FLAGS.MIGRATED_ITEM_METADATA] = [];
     moduleFlags[FLAGS.TRANSACTION_LOG] = [];
     moduleFlags[FLAGS.RECOVERY_RECORDS] = [];
     moduleFlags[FLAGS.OPERATION_TOMBSTONES] = [];
@@ -494,6 +495,15 @@ export function registerStoragePrivacyHooks() {
   storagePrivacyHooksRegistered = true;
   Hooks.on("renderUserConfig", suppressBackingActorFromUserConfig);
   Hooks.on("preUpdateUser", preventBackingActorCharacterAssignment);
+  // Storage boundaries are safety/privacy invariants, not optional runtime UI.
+  // Register them before `ready` so a deferred player client or non-active GM
+  // cannot see/delete storage Actors or mutate their embedded Items while the
+  // adapter/migration runtime is still unavailable.
+  Hooks.on("renderActorDirectory", suppressBackingActorFromDirectory);
+  Hooks.on("preDeleteActor", preventBackingActorDeletion);
+  Hooks.on("preCreateItem", preventInactiveGmStorageItemMutation);
+  Hooks.on("preUpdateItem", preventInactiveGmStorageItemMutation);
+  Hooks.on("preDeleteItem", preventInactiveGmStorageItemMutation);
 }
 
 /** Remove storage choices from any UserConfig which rendered before `ready`. */

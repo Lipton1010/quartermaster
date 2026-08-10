@@ -74,6 +74,32 @@ test("hidden balances remain part of load while staying out of rendered currenci
   assert.equal(context.totals.totalLoad, 2);
 });
 
+test("inventory context isGM reflects the active storage-GM election, not raw user.isGM", () => {
+  game.system.id = "dnd5e";
+  const previousUser = game.user;
+  const previousUsers = game.users;
+  const actor = {
+    id: "vault-election",
+    uuid: "Actor.vault-election",
+    name: "Vault",
+    system: { currency: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 } },
+    items: [],
+    getFlag() { return undefined; }
+  };
+
+  try {
+    game.user = { id: "gm-waiting", isGM: true };
+    game.users = { activeGM: { id: "gm-active", isGM: true } };
+    assert.equal(buildInventoryContext(actor).isGM, false);
+
+    game.users = { activeGM: { id: "gm-waiting", isGM: true } };
+    assert.equal(buildInventoryContext(actor).isGM, true);
+  } finally {
+    game.user = previousUser;
+    game.users = previousUsers;
+  }
+});
+
 test("weight cache delegates PF2e item load to the native aggregate and removes coin Bulk", () => {
   game.system.id = "pf2e";
   const actor = {

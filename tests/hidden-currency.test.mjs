@@ -349,3 +349,20 @@ test("reveal all executes one durable serialized reveal per staged entry", async
     2
   );
 });
+
+test("an expired reveal stamp with no pending claim rotates safely instead of bricking the entry", async () => {
+  const oldRequestId = "qm-hc-reveal-staged-gp-expired";
+  const fixture = createFixture({
+    entries: [stagedEntry({
+      revealRequestId: oldRequestId,
+      revealRequestedAt: Date.now() - 301_000
+    })]
+  });
+  const { HiddenCurrency } = await loadModules();
+
+  const result = await HiddenCurrency.revealHiddenCurrency("staged-gp");
+  assert.equal(result.status, "success");
+  assert.notEqual(result.entry.revealRequestId, oldRequestId);
+  assert.equal(fixture.backing.system.currency.gp, 15);
+  assert.deepEqual(fixture.stagingFlags[FLAGS.HIDDEN_CURRENCY], []);
+});

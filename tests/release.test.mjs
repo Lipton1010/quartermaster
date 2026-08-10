@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname.replace(/^\/(?:([A-Za-z]:))/, "$1");
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 test("v1 manifest is system agnostic and uses a version-specific artifact", () => {
   const manifest = JSON.parse(readFileSync(join(root, "module.json"), "utf8"));
@@ -67,13 +68,22 @@ test("startup registers adapters before settings and gates runtime hooks on curr
 });
 
 test("release workflow requires a separate manually authorized publication", () => {
-  const workflow = readFileSync(join(root, ".github", "workflows", "release.yml"), "utf8");
-  assert.match(workflow, /workflow_dispatch:/);
-  assert.doesNotMatch(workflow, /push:\s*\n\s*tags:/);
-  assert.match(workflow, /environment:\s*foundry-publication/);
-  assert.match(workflow, /artifacts\/system-agnostic\/module\.json/);
-  assert.match(workflow, /artifacts\/system-agnostic\/module\.zip\.sha256/);
-  assert.match(workflow, /artifacts\/system-agnostic\/module\.zip\.contents\.txt/);
+  const release = readFileSync(join(root, ".github", "workflows", "release.yml"), "utf8");
+  const publication = readFileSync(
+    join(root, ".github", "workflows", "publish-foundry.yml"),
+    "utf8"
+  );
+  assert.match(release, /workflow_dispatch:/);
+  assert.doesNotMatch(release, /foundryvtt-publish-package-action/);
+  assert.doesNotMatch(release, /push:\s*\n\s*tags:/);
+  assert.match(release, /artifacts\/system-agnostic\/module\.json/);
+  assert.match(release, /artifacts\/system-agnostic\/module\.zip\.sha256/);
+  assert.match(release, /artifacts\/system-agnostic\/module\.zip\.contents\.txt/);
+  assert.match(publication, /workflow_dispatch:/);
+  assert.match(publication, /environment:\s*foundry-publication/);
+  assert.match(publication, /steps\.manifest\.outputs\.version/);
+  assert.match(publication, /steps\.manifest\.outputs\.minimum/);
+  assert.match(publication, /steps\.manifest\.outputs\.verified/);
 });
 
 test("package validation emits checksum, contents, and archived manifest evidence", () => {
@@ -82,4 +92,17 @@ test("package validation emits checksum, contents, and archived manifest evidenc
   assert.match(validator, /module\.zip\.sha256/);
   assert.match(validator, /module\.zip\.contents\.txt/);
   assert.match(validator, /writeFileSync\(manifestPath, archivedManifestBytes\)/);
+});
+
+test("the documented inventory UI facade exists before runtime activation", () => {
+  const entry = readFileSync(join(root, "scripts", "module.js"), "utf8");
+  const apiStart = entry.indexOf("function installPublicApi");
+  const runtimeBranch = entry.indexOf("if (runtimeReady)", apiStart);
+  const baseApi = entry.slice(apiStart, runtimeBranch);
+  assert.match(baseApi, /ui:\s*\{[\s\S]*openInventory: openInventoryApp/);
+});
+
+test("development documentation is excluded from the runtime archive", () => {
+  const attributes = readFileSync(join(root, ".gitattributes"), "utf8");
+  assert.match(attributes, /^docs\s+export-ignore$/m);
 });

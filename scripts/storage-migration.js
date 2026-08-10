@@ -37,6 +37,10 @@ export async function migrateStorageSchema(backingActor, stagingActor) {
     // schema-1 copy-and-verify pass completed. If the private marker was later
     // lost, repair it only after rechecking the privacy boundary and canonical
     // log. Never leave a permanently blocked world because one marker vanished.
+    // Early schema-1 development builds did not archive loot-prep notes from
+    // already-visible Items. Repair that privacy boundary idempotently before
+    // accepting the marker as complete.
+    await migrateVisibleItemMetadata(backingActor, stagingActor);
     verifyPrivateStorageCleared(backingActor);
     await withStorageLedgerLock(async () => {
       requireActiveStorageGM();
@@ -73,9 +77,13 @@ export async function migrateStorageSchema(backingActor, stagingActor) {
     await setPhase(backingActor, state, "items");
     const itemCount = await migrateHiddenItems(backingActor, stagingActor);
 
+    await setPhase(backingActor, state, "visible-item-metadata");
+    const metadataCount = await migrateVisibleItemMetadata(backingActor, stagingActor);
+
     await setPhase(backingActor, state, "loot-prep-metadata");
     await migrateArrayFlag(backingActor, stagingActor, FLAGS.HIDDEN_CURRENCY, entryIdentity);
     await migrateArrayFlag(backingActor, stagingActor, FLAGS.LOOT_PREP_FOLDERS, entryIdentity);
+    const fractionalCurrencyWarnings = await detectFractionalHiddenCurrency(backingActor, stagingActor);
 
     await setPhase(backingActor, state, "transaction-log");
     await withStorageLedgerLock(async () => {
@@ -95,6 +103,8 @@ export async function migrateStorageSchema(backingActor, stagingActor) {
       status: "complete",
       phase: "complete",
       migratedItemCount: itemCount,
+      migratedVisibleItemMetadataCount: metadataCount,
+      fractionalCurrencyWarnings,
       completedAt: Date.now(),
       updatedAt: Date.now(),
       error: null
@@ -105,7 +115,7 @@ export async function migrateStorageSchema(backingActor, stagingActor) {
     // The shared marker advances last. A failure before this line is retried.
     await setVerifiedSchemaMarker(backingActor, "shared");
     console.log(`${MODULE_TITLE} | Storage migration to schema ${STORAGE_SCHEMA_VERSION} complete`);
-    return { migrated: true, version: STORAGE_SCHEMA_VERSION, itemCount };
+    return { migrated: true, version: STORAGE_SCHEMA_VERSION, itemCount, fractionalCurrencyWarnings };
   } catch (error) {
     const failed = {
       ...state,
@@ -178,6 +188,68 @@ async function migrateHiddenItems(backingActor, stagingActor) {
   return count;
 }
 
+/**
+ * Notes/folder assignments on already-visible v0.1.8 Items are still private
+ * GM preparation data. Archive them on staging before scrubbing the shared
+ * Item. The stable UUID identity makes the pass restartable and conflict-safe.
+ */
+async function migrateVisibleItemMetadata(backingActor, stagingActor) {
+  requireActiveStorageGM();
+  const records = [];
+  const sources = [];
+  for (const item of backingActor.items ?? []) {
+    if (item.getFlag(MODULE_ID, FLAGS.HIDDEN) === true) continue;
+    const note = item.getFlag(MODULE_ID, FLAGS.LOOT_PREP_NOTE);
+    const folderId = item.getFlag(MODULE_ID, FLAGS.LOOT_PREP_FOLDER);
+    if (note == null && folderId == null) continue;
+    const sourceItemUuid = item.uuid ?? `${backingActor.uuid}.Item.${item.id}`;
+    records.push({
+      id: sourceItemUuid,
+      sourceItemUuid,
+      itemId: item.id,
+      itemName: item.name ?? null,
+      note: note ?? null,
+      folderId: folderId ?? null
+    });
+    sources.push(item);
+  }
+  if (records.length === 0) return 0;
+
+  const current = normalizeArray(
+    stagingActor.getFlag(MODULE_ID, FLAGS.MIGRATED_ITEM_METADATA)
+  );
+  const merged = mergeUnique(current, records, entryIdentity);
+  await writeAndVerifyArrayFlag(
+    stagingActor,
+    FLAGS.MIGRATED_ITEM_METADATA,
+    merged,
+    "migrated-visible-item-metadata"
+  );
+
+  for (const item of sources) {
+    await scrubPrivateItemFlag(item, FLAGS.LOOT_PREP_NOTE);
+    await scrubPrivateItemFlag(item, FLAGS.LOOT_PREP_FOLDER);
+  }
+  return records.length;
+}
+
+async function scrubPrivateItemFlag(item, flag) {
+  requireActiveStorageGM();
+  let writeError = null;
+  try {
+    await item.unsetFlag(MODULE_ID, flag);
+  } catch (error) {
+    writeError = error;
+  }
+  if (item.getFlag(MODULE_ID, flag) != null) {
+    if (writeError) throw writeError;
+    throw new Error(`shared-item-${flag}-scrub-verification-failed-${item.id}`);
+  }
+  if (writeError) {
+    console.warn(`${MODULE_TITLE} | ${flag} scrub committed despite an update error`, writeError);
+  }
+}
+
 function verifyMigratedItem(expected, actual) {
   const project = data => ({
     _id: data?._id ?? data?.id ?? null,
@@ -212,6 +284,56 @@ async function migrateArrayFlag(source, destination, flag, identity) {
     requireActiveStorageGM();
     await source.setFlag(MODULE_ID, flag, []);
   }
+}
+
+/**
+ * v0.1.8 accepted fractional hidden-currency amounts. Some native currencies
+ * (PF2e's coin APIs) now require whole units, so a migrated fractional entry
+ * could never be revealed. Detect these instead of leaving them silently
+ * stuck, and hand the GM enough identity to reconcile or discard them.
+ */
+async function detectFractionalHiddenCurrency(backingActor, stagingActor) {
+  const entries = normalizeArray(stagingActor.getFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY));
+  if (entries.length === 0) return [];
+
+  let getCurrency;
+  try {
+    ({ getCurrency } = await import("./currencies.js"));
+  } catch (error) {
+    console.warn(`${MODULE_TITLE} | Unable to load currency definitions to check migrated hidden currency`, error);
+    return [];
+  }
+
+  const flagged = [];
+  for (const entry of entries) {
+    const amount = Number(entry?.amount);
+    if (!Number.isFinite(amount) || Number.isInteger(amount)) continue;
+    const currencyId = entry?.currencyId ?? entry?.type;
+    if (!currencyId) continue;
+    let currency = null;
+    try {
+      currency = getCurrency(currencyId, backingActor);
+    } catch (error) {
+      console.warn(`${MODULE_TITLE} | Unable to resolve migrated currency "${currencyId}"`, error);
+      continue;
+    }
+    if (currency?.wholeUnitsOnly) {
+      flagged.push({ id: entry.id ?? null, currencyId, amount });
+    }
+  }
+
+  if (flagged.length > 0) {
+    console.warn(
+      `${MODULE_TITLE} | Migrated hidden currency includes fractional amounts that cannot be revealed until a GM corrects them`,
+      flagged
+    );
+    globalThis.ui?.notifications?.warn?.(
+      `${MODULE_TITLE}: migrated hidden currency includes fractional amounts (${
+        flagged.map(entry => `${entry.amount} ${entry.currencyId}`).join(", ")
+      }) that cannot be revealed until a GM corrects them.`
+    );
+  }
+  return flagged;
 }
 
 async function migrateTransactionLog(backingActor, stagingActor, state) {
@@ -253,6 +375,7 @@ async function ensureStagingDefaults(stagingActor) {
   for (const flag of [
     FLAGS.HIDDEN_CURRENCY,
     FLAGS.LOOT_PREP_FOLDERS,
+    FLAGS.MIGRATED_ITEM_METADATA,
     FLAGS.TRANSACTION_LOG,
     FLAGS.RECOVERY_RECORDS,
     FLAGS.OPERATION_TOMBSTONES
@@ -352,6 +475,13 @@ function verifyPrivateStorageCleared(backingActor) {
     item.getFlag(MODULE_ID, FLAGS.HIDDEN) === true
   );
   if (remainingItems.length > 0) throw new Error("hidden-items-remain-on-shared-vault");
+  const metadataLeaks = backingActor.items.filter(item =>
+    item.getFlag(MODULE_ID, FLAGS.LOOT_PREP_NOTE) != null
+      || item.getFlag(MODULE_ID, FLAGS.LOOT_PREP_FOLDER) != null
+  );
+  if (metadataLeaks.length > 0) {
+    throw new Error("loot-prep-item-metadata-remains-on-shared-vault");
+  }
   if (normalizeArray(backingActor.getFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY)).length > 0) {
     throw new Error("hidden-currency-remains-on-shared-vault");
   }

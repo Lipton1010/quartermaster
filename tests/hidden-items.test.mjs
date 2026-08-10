@@ -173,3 +173,38 @@ test("hidden Item deletion reports success when a hook throws after removal", as
   assert.equal(log.at(-1).type, "hidden.deleted");
   assert.equal(log.at(-1).itemId, "staged-secret");
 });
+
+test("rapid duplicate hide requests serialize and create only one private copy", async (t) => {
+  const previousGame = globalThis.game;
+  t.after(() => { globalThis.game = previousGame; });
+  const { backing, staging } = installWorld();
+
+  const [first, second] = await Promise.all([
+    setItemHidden("secret", true),
+    setItemHidden("secret", true)
+  ]);
+
+  assert.equal(backing.items.get("secret"), undefined);
+  assert.equal(staging.items.size, 1);
+  assert.equal(first, staging.items.get("secret"));
+  assert.equal(second, staging.items.get("secret"));
+});
+
+test("rapid duplicate reveal requests serialize and create only one visible copy", async (t) => {
+  const previousGame = globalThis.game;
+  t.after(() => { globalThis.game = previousGame; });
+  const { backing, staging } = installWorld();
+
+  await setItemHidden("secret", true);
+  assert.equal(staging.items.size, 1);
+
+  const [first, second] = await Promise.all([
+    setItemHidden("secret", false),
+    setItemHidden("secret", false)
+  ]);
+
+  assert.equal(staging.items.get("secret"), undefined);
+  assert.equal(backing.items.size, 1);
+  assert.equal(first, backing.items.get("secret"));
+  assert.equal(second, backing.items.get("secret"));
+});

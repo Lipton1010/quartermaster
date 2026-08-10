@@ -247,6 +247,16 @@ async function dispatchCurrencyChange(envelope, senderUserId) {
     return { status: "failed", error: "invalid-delta" };
   }
 
+  // Approval is its own durable phase. It may wait indefinitely for a GM, so
+  // it must never hold the shared currency mutation lock. The derived request
+  // is replay-protected: retries reuse the recorded decision without opening
+  // duplicate dialogs, then continue to the original mutation request.
+  const approval = await coordinateCurrencyApproval(envelope, senderUserId);
+  if (approval.status !== "success") return approval;
+  const mutationTimestamp = Number.isFinite(approval.resultData?.approvedAt)
+    ? approval.resultData.approvedAt
+    : timestamp;
+
   // Custom balances share one flag object, so serialize all currency writes.
   const resourceKeys = ["currency-ledger"];
 
@@ -255,12 +265,44 @@ async function dispatchCurrencyChange(envelope, senderUserId) {
     requestId,
     operationType: "currencyChange",
     requester: senderUserId,
-    timestamp,
+    timestamp: mutationTimestamp,
     requestData: {
       type: envelope.type,
       payload
     },
-    fn: async () => stubCurrencyChange(payload, { requestId, userId: senderUserId })
+    fn: async () => stubCurrencyChange(payload, {
+      requestId,
+      userId: senderUserId,
+      approvalResolved: true
+    })
+  });
+}
+
+async function coordinateCurrencyApproval(envelope, senderUserId) {
+  const { requestId, payload, timestamp } = envelope;
+  const preflight = await inspectCurrencyApproval(payload, {
+    requestId,
+    userId: senderUserId,
+    prompt: false
+  });
+  if (preflight.status !== "approval-required") return preflight;
+
+  return executeOperation({
+    resourceKeys: [`currency-approval:${requestId}`],
+    requestId: `approval:${requestId}`,
+    operationType: "currencyApproval",
+    requester: senderUserId,
+    timestamp,
+    requestData: {
+      type: "quartermaster.currencyApproval",
+      originalType: envelope.type,
+      payload
+    },
+    fn: async () => inspectCurrencyApproval(payload, {
+      requestId,
+      userId: senderUserId,
+      prompt: true
+    })
   });
 }
 
@@ -403,7 +445,7 @@ async function stubCurrencyChange(data, context) {
  */
 export async function realCurrencyChange(data, context) {
   const { currencyType, delta, reason } = data;
-  const { requestId, userId } = context ?? {};
+  const { requestId, userId, approvalResolved = false } = context ?? {};
 
   const backingActor = (await import("./backing-actor.js")).getBackingActor();
   if (!backingActor) {
@@ -438,49 +480,15 @@ export async function realCurrencyChange(data, context) {
     };
   }
 
-  // Approval gate (step 13). Runs on the GM-side, before any mutation.
-  // GMs auto-approve their own requests; players hit the configured policy.
-  const referenceValue = currency.referenceRate == null
-    ? 0
-    : Math.abs(delta * currency.referenceRate);
-  if (needsApproval({ userId, delta, referenceValue })) {
-    const decision = await promptCurrencyApproval({
+  if (!approvalResolved) {
+    const approval = await inspectCurrencyApproval(data, {
       requestId,
       userId,
-      currencyType,
-      currencyName: currency.name,
-      currencySymbol: currency.symbol,
-      delta,
-      currentBalance: currentValue,
-      reason
+      prompt: true,
+      backingActor,
+      currency
     });
-
-    if (decision !== "approve") {
-      // Write denial entry so the log captures what was attempted
-      const TransactionLog = await import("./transaction-log.js");
-      await TransactionLog.writeEntry({
-        type: "currency.denied",
-        requestId,
-        userId,
-        timestamp: Date.now(),
-        currencyType,
-        currencyName: currency.name,
-        currencySymbol: currency.symbol,
-        delta,
-        reason: reason ?? "",
-        previousValue: currentValue,
-        denialReason: decision  // "deny" or "timeout"
-      });
-
-      return {
-        status: "denied",
-        error: decision === "timeout" ? "approval-timeout" : "denied-by-gm",
-        denialReason: decision,
-        currencyType,
-        delta
-      };
-    }
-    // Decision is "approve"; fall through to execute
+    if (approval.status !== "success") return approval;
   }
 
   const newValue = currentValue + delta;
@@ -564,6 +572,74 @@ export async function realCurrencyChange(data, context) {
       error: err?.message ?? "currency-update-exception"
     };
   }
+}
+
+async function inspectCurrencyApproval(data, {
+  requestId,
+  userId,
+  prompt = false,
+  backingActor = null,
+  currency = null
+} = {}) {
+  const { currencyType, delta, reason } = data ?? {};
+  backingActor ??= (await import("./backing-actor.js")).getBackingActor();
+  if (!backingActor) return { status: "failed", error: "no-backing-actor" };
+  currency ??= getCurrency(currencyType, backingActor);
+  if (!currency) return { status: "failed", error: "invalid-currency-type", currencyType };
+  if (typeof delta !== "number" || !Number.isFinite(delta)) {
+    return { status: "failed", error: "invalid-delta", delta };
+  }
+  if (delta === 0) return { status: "success", approvalRequired: false };
+
+  const referenceValue = currency.referenceRate == null
+    ? 0
+    : Math.abs(delta * currency.referenceRate);
+  if (!needsApproval({ userId, delta, referenceValue })) {
+    return { status: "success", approvalRequired: false };
+  }
+  if (!prompt) return { status: "approval-required" };
+
+  const currentValue = currency.value ?? 0;
+  const decision = await promptCurrencyApproval({
+    requestId,
+    userId,
+    currencyType,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
+    delta,
+    currentBalance: currentValue,
+    reason
+  });
+  if (decision === "approve") {
+    return {
+      status: "success",
+      approvalRequired: true,
+      approved: true,
+      resultData: { approvedAt: Date.now() }
+    };
+  }
+
+  const TransactionLog = await import("./transaction-log.js");
+  await TransactionLog.writeEntry({
+    type: "currency.denied",
+    requestId,
+    userId,
+    timestamp: Date.now(),
+    currencyType,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
+    delta,
+    reason: reason ?? "",
+    previousValue: currentValue,
+    denialReason: decision
+  });
+  return {
+    status: "denied",
+    error: decision === "timeout" ? "approval-timeout" : "denied-by-gm",
+    denialReason: decision,
+    currencyType,
+    delta
+  };
 }
 
 async function stubCustomResourceChange(data, context) {

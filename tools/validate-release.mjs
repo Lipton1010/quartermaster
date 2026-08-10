@@ -7,9 +7,11 @@ const manifest = JSON.parse(readFileSync(join(root, "module.json"), "utf8"));
 JSON.parse(readFileSync(join(root, "lang", "en.json"), "utf8"));
 
 const failures = [];
-if (manifest.version !== "1.0.0") failures.push("module.json version must be 1.0.0");
+if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(manifest.version ?? "")) {
+  failures.push("module.json version must be semantic");
+}
 if (manifest.relationships?.systems?.length) failures.push("module.json must not restrict supported systems");
-if (!manifest.download?.includes("/releases/download/v1.0.0/module.zip")) {
+if (!manifest.download?.includes(`/releases/download/v${manifest.version}/module.zip`)) {
   failures.push("module.json download URL must be version-specific");
 }
 
@@ -31,8 +33,12 @@ visit(join(root, "scripts"));
 const adapterSegment = `${join("scripts", "system-adapters")}`.toLowerCase();
 const forbidden = [
   /actor\.system\?*\.currency|system\.currency\./,
+  /(?:actor|item)\??\.system\??\.(?:quantity|weight|price|identified|unidentified)\b/,
+  /flags\??\.dnd5e\b/,
   /actor\.type\s*[!=]==?\s*["']character["']/,
-  /type:\s*["']npc["']/
+  /type:\s*["']npc["']/,
+  /(?:actor|item)\.type\s*[!=]==?\s*["'](?:loot|character|npc)["']/,
+  /\.includes\(["']loot["']\)/
 ];
 for (const file of productionFiles) {
   const normalized = file.toLowerCase();

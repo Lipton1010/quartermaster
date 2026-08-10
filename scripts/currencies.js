@@ -513,7 +513,8 @@ function getNativeCurrencyDefinitions(actor) {
       name: cleanString(raw.name) || id.toUpperCase(),
       symbol: cleanSymbol(raw.symbol) || id.toUpperCase(),
       value: normalizeAmount(raw.value, 0),
-      referenceRate
+      referenceRate,
+      wholeUnitsOnly: raw.wholeUnitsOnly === true
     });
   }
   return definitions;

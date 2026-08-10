@@ -14,10 +14,10 @@ import {
 } from "./generic.js";
 
 export const PF2E_NATIVE_CURRENCIES = Object.freeze([
-  Object.freeze({ id: "pp", name: "Platinum", symbol: "PP", referenceRate: 10 }),
-  Object.freeze({ id: "gp", name: "Gold", symbol: "GP", referenceRate: 1 }),
-  Object.freeze({ id: "sp", name: "Silver", symbol: "SP", referenceRate: 0.1 }),
-  Object.freeze({ id: "cp", name: "Copper", symbol: "CP", referenceRate: 0.01 })
+  Object.freeze({ id: "pp", name: "Platinum", symbol: "PP", referenceRate: 10, wholeUnitsOnly: true }),
+  Object.freeze({ id: "gp", name: "Gold", symbol: "GP", referenceRate: 1, wholeUnitsOnly: true }),
+  Object.freeze({ id: "sp", name: "Silver", symbol: "SP", referenceRate: 0.1, wholeUnitsOnly: true }),
+  Object.freeze({ id: "cp", name: "Copper", symbol: "CP", referenceRate: 0.01, wholeUnitsOnly: true })
 ]);
 
 const NATIVE_IDS = new Set(PF2E_NATIVE_CURRENCIES.map(currency => currency.id));

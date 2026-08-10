@@ -108,7 +108,15 @@ test("selector privacy hooks register before the ready-gated runtime", (t) => {
   t.after(() => { globalThis.Hooks = oldHooks; });
 
   registerStoragePrivacyHooks();
-  assert.deepEqual(registrations.map(([name]) => name), ["renderUserConfig", "preUpdateUser"]);
+  assert.deepEqual(registrations.map(([name]) => name), [
+    "renderUserConfig",
+    "preUpdateUser",
+    "renderActorDirectory",
+    "preDeleteActor",
+    "preCreateItem",
+    "preUpdateItem",
+    "preDeleteItem"
+  ]);
 
   const moduleSource = readFileSync(
     new URL("../scripts/module.js", import.meta.url),

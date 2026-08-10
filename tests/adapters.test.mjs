@@ -10,7 +10,10 @@ import {
 } from "../scripts/system-adapters/registry.js";
 import { genericAdapter } from "../scripts/system-adapters/generic.js";
 import { dnd5eAdapter } from "../scripts/system-adapters/dnd5e.js";
-import { pf2eAdapter } from "../scripts/system-adapters/pf2e.js";
+import {
+  PF2E_NATIVE_CURRENCIES,
+  pf2eAdapter
+} from "../scripts/system-adapters/pf2e.js";
 
 test("generic adapter preserves unknown Item data and omits unsupported metadata", () => {
   const source = {
@@ -74,10 +77,14 @@ test("D&D 5e adapter retains v0.1.8 quantity, weight, price, and currency behavi
   });
   assert.deepEqual(updates, [{ "system.currency.gp": 10 }]);
   assert.deepEqual(await dnd5eAdapter.applyNativeCurrencyDelta(actor, "gp", 0.5), {
-    ok: false,
-    error: "whole-coins-required"
+    ok: true,
+    previousValue: 12,
+    newValue: 12.5
   });
-  assert.deepEqual(updates, [{ "system.currency.gp": 10 }]);
+  assert.deepEqual(updates, [
+    { "system.currency.gp": 10 },
+    { "system.currency.gp": 12.5 }
+  ]);
   assert.equal(dnd5eAdapter.computeNativeCurrencyLoad([
     { source: "native", value: 50 },
     { source: "native", value: 25 }
@@ -124,6 +131,7 @@ test("PF2e adapter uses loot Actors, native coin APIs, Bulk, and coin filtering"
   };
   assert.equal((await pf2eAdapter.applyNativeCurrencyDelta(actor, "gp", 3)).newValue, 7);
   assert.equal((await pf2eAdapter.applyNativeCurrencyDelta(actor, "gp", -2)).newValue, 2);
+  assert.equal(PF2E_NATIVE_CURRENCIES.every(currency => currency.wholeUnitsOnly), true);
   assert.deepEqual(calls.map(call => call[0]), ["add", "remove"]);
 
   assert.equal(pf2eAdapter.computeNativeCurrencyLoad([

@@ -105,7 +105,7 @@ export async function executeOperation(options = {}) {
   }
 
   const now = Date.now();
-  const maxAgeMs = requestAgeMaxMs();
+  const maxAgeMs = getRequestAgeMaxMs();
   const timestampError = validateTimestamp(timestamp, { now, maxAgeMs });
   if (timestampError) return timestampError;
 
@@ -351,11 +351,32 @@ function safelyInspectTombstone(requestId, binding) {
   }
 }
 
-function requestAgeMaxMs() {
+/** Public for durable callers which persist a request timestamp between UI attempts. */
+export function getRequestAgeMaxMs() {
   const seconds = Number(game.settings.get(MODULE_ID, SETTINGS.REQUEST_AGE_MAX_SECONDS));
   return Number.isFinite(seconds) && seconds > 0
     ? seconds * 1000
     : DEFAULT_REQUEST_AGE_MS;
+}
+
+/**
+ * Inspect a request's private replay authority without executing it.
+ * Durable callers use this before replacing an expired persisted request ID.
+ */
+export function inspectRequestReplay({
+  requestId,
+  requester,
+  operationType,
+  timestamp,
+  requestData
+} = {}) {
+  if (typeof requestId !== "string" || !requestId.trim()) return { state: "unverifiable" };
+  try {
+    const binding = createRequestBinding({ requester, operationType, timestamp, requestData });
+    return safelyInspectTombstone(requestId, binding);
+  } catch {
+    return { state: "unverifiable" };
+  }
 }
 
 function validateTimestamp(timestamp, { now, maxAgeMs }) {

@@ -150,12 +150,10 @@ export const dnd5eAdapter = Object.freeze({
     if (!actor || !NATIVE_IDS.has(currencyId)) {
       return { ok: false, error: "invalid-currency-type" };
     }
-    // D&D5e's native currency fields are non-negative integer fields. Reject
-    // fractional deltas before update() so a system validation failure cannot
-    // be mistaken for a transient write error and retried.
-    if (!Number.isInteger(delta)) {
-      return { ok: false, error: "whole-coins-required" };
-    }
+    // v0.1.8 accepted decimal D&D balances and worlds may already contain
+    // staged/native fractional values. Preserve that compatibility here;
+    // adapters such as PF2e which expose whole-coin APIs declare and enforce
+    // their stricter unit constraint themselves.
     const current = finiteNonNegative(actor.system?.currency?.[currencyId], 0);
     const next = current + delta;
     if (!Number.isFinite(next) || next < 0) {

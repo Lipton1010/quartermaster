@@ -22,6 +22,7 @@ export const FLAGS = {
   LOOT_PREP_FOLDERS: "lootPrepFolders",
   LOOT_PREP_FOLDER: "lootPrepFolder",
   LOOT_PREP_NOTE: "lootPrepNote",
+  MIGRATED_ITEM_METADATA: "migratedItemMetadata",
   BACKING_ACTOR_MARKER: "isQuartermasterBackingActor",
   STAGING_ACTOR_MARKER: "isQuartermasterStagingActor",
   STORAGE_SCHEMA_VERSION: "storageSchemaVersion",

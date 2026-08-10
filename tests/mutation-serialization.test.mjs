@@ -57,7 +57,6 @@ test("storage Item writes recheck active-GM authority at the document boundary",
   const dragDrop = source("scripts/drag-drop.js");
   const inventory = source("scripts/apps/inventory-app.js");
   const backing = source("scripts/backing-actor.js");
-  const entry = source("scripts/module.js");
 
   assert.match(
     dragDrop,
@@ -68,8 +67,9 @@ test("storage Item writes recheck active-GM authority at the document boundary",
   assert.match(inventory, /requireActiveStorageGM\(\);\s*await item\.setFlag/g);
   assert.match(backing, /export function preventInactiveGmStorageItemMutation/);
   for (const hook of ["preCreateItem", "preUpdateItem", "preDeleteItem"]) {
-    assert.match(entry, new RegExp(`Hooks\\.on\\("${hook}", preventInactiveGmStorageItemMutation\\)`));
+    assert.match(backing, new RegExp(`Hooks\\.on\\("${hook}", preventInactiveGmStorageItemMutation\\)`));
   }
+  assert.match(backing, /Hooks\.on\("preDeleteActor", preventBackingActorDeletion\)/);
 });
 
 test("coordinated terminal results are plain JSON before persistence or replay", () => {
@@ -82,4 +82,16 @@ test("coordinated terminal results are plain JSON before persistence or replay",
     coordinator,
     /function normalizeTerminalResult[\s\S]*?JSON\.stringify\(result\)[\s\S]*?JSON\.parse\(serialized\)/
   );
+});
+
+test("currency approval cannot hold the shared currency mutation lock", () => {
+  const socket = source("scripts/socket-handler.js");
+  const dispatchStart = socket.indexOf("async function dispatchCurrencyChange");
+  const dispatchEnd = socket.indexOf("async function dispatchCustomResourceChange", dispatchStart);
+  const dispatch = socket.slice(dispatchStart, dispatchEnd);
+  const approvalStart = dispatch.indexOf("coordinateCurrencyApproval");
+  const currencyOperationStart = dispatch.indexOf("resourceKeys = [\"currency-ledger\"]");
+  assert.ok(approvalStart >= 0 && approvalStart < currencyOperationStart);
+  assert.match(dispatch, /resourceKeys: \[`currency-approval:\$\{requestId\}`\]/);
+  assert.match(dispatch, /approvalResolved: true/);
 });

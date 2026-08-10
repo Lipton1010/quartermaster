@@ -33,6 +33,7 @@ import {
 } from "../loot-prep-notes.js";
 import { sanitizeItemForTransfer } from "../sanitization.js";
 import { QM_REHIDE_MARKER, QM_LOOTPREP_DRAG_MARKER } from "../drag-drop.js";
+import { isActiveStorageGM } from "../storage-ledger.js";
 import { writeEntry } from "../transaction-log.js";
 import { getCurrencies, getCurrency } from "../currencies.js";
 import { openCurrencyManager } from "./currency-manager-app.js";
@@ -155,7 +156,7 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     return {
       moduleVersion: game.modules.get(MODULE_ID)?.version ?? "unknown",
-      isGM: game.user.isGM,
+      isGM: isActiveStorageGM(),
       backingActorPresent: !!backing,
       backingActorName: backing?.name ?? null,
       backingActorId: backing?.id ?? null,
@@ -269,8 +270,16 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static async onRevealItem(event, target) {
     if (!game.user.isGM) return;
     const itemId = target.dataset.itemId;
-    if (!itemId) return;
-    const result = await revealItem(itemId, { announce: event.shiftKey });
+    // The storage-ledger lock already makes a duplicate reveal safe, but a
+    // disabled control avoids a redundant round trip and duplicate toast.
+    if (!itemId || target.disabled) return;
+    target.disabled = true;
+    let result;
+    try {
+      result = await revealItem(itemId, { announce: event.shiftKey });
+    } finally {
+      target.disabled = false;
+    }
     if (result.status === "success") ui.notifications.info(`"${result.itemName}" revealed.`);
     else ui.notifications.error(`${MODULE_TITLE}: reveal failed — ${result.error}`);
     this.render();
@@ -541,7 +550,7 @@ async function _promptHiddenItemCreate(folderId) {
     return null;
   }
 
-  const defaultType = itemTypes.includes("loot") ? "loot" : itemTypes[0];
+  const defaultType = itemTypes[0];
   const options = itemTypes.map(type => {
     const label = game.i18n.localize(CONFIG.Item.typeLabels?.[type] ?? type);
     return `<option value="${escapeHtml(type)}"${type === defaultType ? " selected" : ""}>${escapeHtml(label)}</option>`;

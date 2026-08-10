@@ -19,6 +19,10 @@ class FakeItem {
     this.uuid = `${parent.uuid}.Item.${this.id}`;
   }
   getFlag(module, flag) { return this.flags[module]?.[flag]; }
+  async unsetFlag(module, flag) {
+    if (this.flags[module]) delete this.flags[module][flag];
+    return this;
+  }
   toObject() {
     return { _id: this.id, name: this.name, type: this.type, flags: structuredClone(this.flags) };
   }
@@ -76,6 +80,14 @@ function legacyActors({ failDeleteOnce = false } = {}) {
         [FLAGS.LOOT_PREP_FOLDER]: "room",
         [FLAGS.LOOT_PREP_NOTE]: "King's ransom"
       } }
+    }, {
+      _id: "map",
+      name: "Visible Map",
+      type: "loot",
+      flags: { [MODULE_ID]: {
+        [FLAGS.LOOT_PREP_FOLDER]: "room",
+        [FLAGS.LOOT_PREP_NOTE]: "The marked route is a secret"
+      } }
     }]
   });
   return [source, new FakeActor("private")];
@@ -121,9 +133,19 @@ test("schema migration moves private state, verifies it, and is idempotent", asy
   const [shared, staging] = legacyActors();
   const result = await migrateStorageSchema(shared, staging);
   assert.equal(result.migrated, true);
-  assert.equal(shared.items.length, 0);
+  assert.equal(shared.items.length, 1);
   assert.equal(staging.items.length, 1);
   assert.equal(staging.items[0].getFlag(MODULE_ID, FLAGS.LOOT_PREP_NOTE), "King's ransom");
+  assert.equal(shared.items[0].getFlag(MODULE_ID, FLAGS.LOOT_PREP_NOTE), undefined);
+  assert.equal(shared.items[0].getFlag(MODULE_ID, FLAGS.LOOT_PREP_FOLDER), undefined);
+  assert.deepEqual(staging.getFlag(MODULE_ID, FLAGS.MIGRATED_ITEM_METADATA), [{
+    id: "Actor.shared.Item.map",
+    sourceItemUuid: "Actor.shared.Item.map",
+    itemId: "map",
+    itemName: "Visible Map",
+    note: "The marked route is a secret",
+    folderId: "room"
+  }]);
   assert.deepEqual(shared.getFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY), []);
   assert.deepEqual(staging.getFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY), [
     { id: "coins", currencyId: "gp", amount: 25 }
@@ -138,17 +160,41 @@ test("schema migration moves private state, verifies it, and is idempotent", asy
   assert.equal(staging.items.length, 1);
 });
 
+test("a migrated fractional amount for a whole-units-only native currency is surfaced to the GM", async () => {
+  game.system = { id: "pf2e" };
+  const [shared, staging] = legacyActors();
+  shared.inventory = { coins: {} };
+  await shared.setFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY, [
+    { id: "coins", currencyId: "gp", amount: 25 },
+    { id: "half-a-coin", currencyId: "gp", amount: 2.5 }
+  ]);
+
+  const result = await migrateStorageSchema(shared, staging);
+  assert.equal(result.migrated, true);
+  assert.deepEqual(result.fractionalCurrencyWarnings, [
+    { id: "half-a-coin", currencyId: "gp", amount: 2.5 }
+  ]);
+  assert.deepEqual(
+    shared.getFlag(MODULE_ID, FLAGS.MIGRATION_STATE).fractionalCurrencyWarnings,
+    [{ id: "half-a-coin", currencyId: "gp", amount: 2.5 }]
+  );
+  assert.deepEqual(staging.getFlag(MODULE_ID, FLAGS.HIDDEN_CURRENCY), [
+    { id: "coins", currencyId: "gp", amount: 25 },
+    { id: "half-a-coin", currencyId: "gp", amount: 2.5 }
+  ]);
+});
+
 test("failed migration leaves the schema marker unset and resumes without duplicates", async () => {
   const [shared, staging] = legacyActors({ failDeleteOnce: true });
   await assert.rejects(() => migrateStorageSchema(shared, staging), /simulated-delete-failure/);
   assert.equal(shared.getFlag(MODULE_ID, FLAGS.STORAGE_SCHEMA_VERSION), undefined);
-  assert.equal(shared.items.length, 1);
+  assert.equal(shared.items.length, 2);
   assert.equal(staging.items.length, 1);
   assert.equal(shared.getFlag(MODULE_ID, FLAGS.MIGRATION_STATE).status, "failed");
 
   const resumed = await migrateStorageSchema(shared, staging);
   assert.equal(resumed.migrated, true);
-  assert.equal(shared.items.length, 0);
+  assert.equal(shared.items.length, 1);
   assert.equal(staging.items.length, 1);
   assert.equal(shared.getFlag(MODULE_ID, FLAGS.STORAGE_SCHEMA_VERSION), STORAGE_SCHEMA_VERSION);
 });
@@ -179,7 +225,7 @@ test("a missing staging marker is repaired only after current shared storage is 
   assert.equal(repeated.migrated, false);
   assert.equal(repeated.repairedStagingMarker, true);
   assert.equal(staging.getFlag(MODULE_ID, FLAGS.STORAGE_SCHEMA_VERSION), STORAGE_SCHEMA_VERSION);
-  assert.equal(shared.items.length, 0);
+  assert.equal(shared.items.length, 1);
   assert.equal(staging.items.length, 1);
   assert.deepEqual(shared.getFlag(MODULE_ID, FLAGS.TRANSACTION_LOG).map(entry => entry.id), ["public"]);
 });
@@ -194,7 +240,7 @@ test("a missing staging marker is not repaired while private data remains shared
   );
 
   assert.equal(staging.getFlag(MODULE_ID, FLAGS.STORAGE_SCHEMA_VERSION), undefined);
-  assert.equal(shared.items.length, 1);
+  assert.equal(shared.items.length, 2);
 });
 
 test("malformed private staging data is preserved instead of defaulted away", async () => {

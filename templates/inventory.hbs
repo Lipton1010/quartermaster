@@ -188,11 +188,13 @@
                 {{#if this.hasLoad}}<span class="qm-item-load">{{this.loadDisplay}}</span>{{/if}}
                 {{#if this.hasPrice}}<span class="qm-item-price">{{this.priceDisplay}}</span>{{/if}}
               </div>
-{{#if ../sortedCustom}}
+              {{#if ../isGM}}
+              {{#if ../sortedCustom}}
               <div class="qm-item-sort-actions">
                 <button type="button" class="qm-sort-btn" data-action="move-item-up" data-item-id="{{this.id}}" title="Move up"><i class="fa-solid fa-chevron-up"></i></button>
                 <button type="button" class="qm-sort-btn" data-action="move-item-down" data-item-id="{{this.id}}" title="Move down"><i class="fa-solid fa-chevron-down"></i></button>
               </div>
+              {{/if}}
               {{/if}}
               {{#if ../isGM}}
               <div class="qm-item-gm-actions">

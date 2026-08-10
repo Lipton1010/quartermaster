@@ -21,11 +21,8 @@ import {
   ensureStorageActors,
   getBackingActor,
   getStagingActor,
-  suppressBackingActorFromDirectory,
   registerStoragePrivacyHooks,
-  suppressBackingActorFromOpenUserConfigs,
-  preventBackingActorDeletion,
-  preventInactiveGmStorageItemMutation
+  suppressBackingActorFromOpenUserConfigs
 } from "./backing-actor.js";
 import { injectSidebarButtons } from "./sidebar.js";
 import {
@@ -88,9 +85,8 @@ import {
   normalizeItem as normalizeSystemItem
 } from "./system-adapters/registry.js";
 
-// UserConfig may render before Foundry reaches `ready`. Register only the
-// selector and assignment privacy guards immediately; mutation hooks still
-// wait for verified runtime storage below.
+// Storage privacy and document-boundary guards must exist before Foundry
+// reaches `ready`; mutation facades still wait for verified storage below.
 registerStoragePrivacyHooks();
 
 /**
@@ -348,13 +344,8 @@ function registerRuntimeHooks() {
   InventoryToken.registerInventoryTokenShortcutHooks();
 
   Hooks.on("renderActorDirectory", (app, html) => {
-    suppressBackingActorFromDirectory(app, html);
     if (!game.user?.isGM || isActiveStorageGM()) injectSidebarButtons(app, html);
   });
-  Hooks.on("preDeleteActor", preventBackingActorDeletion);
-  Hooks.on("preCreateItem", preventInactiveGmStorageItemMutation);
-  Hooks.on("preUpdateItem", preventInactiveGmStorageItemMutation);
-  Hooks.on("preDeleteItem", preventInactiveGmStorageItemMutation);
 
   // The Actors directory can finish its first render before GM storage and
   // runtime hooks are ready. Force one post-registration render so the vaults
@@ -388,6 +379,23 @@ function installPublicApi({ runtimeReady = false } = {}) {
     storage: {
       getSharedActor: getBackingActor,
       getStagingActor
+    },
+    // Keep the documented UI macro surface stable even while storage is being
+    // prepared. Individual GM-only applications already fail closed unless
+    // this client owns the active-GM election.
+    ui: {
+      openInventory: openInventoryApp,
+      closeInventory: closeInventoryApp,
+      isInventoryOpen: isInventoryAppOpen,
+      refreshInventory: forceInventoryRefresh,
+      scheduleInventoryRefresh,
+      openCurrencyManager,
+      openLootPrep: openLootPrepApp,
+      closeLootPrep: closeLootPrepApp,
+      isLootPrepOpen: isLootPrepAppOpen,
+      openTransactionLog: openTransactionLogApp,
+      closeTransactionLog: closeTransactionLogApp,
+      isTransactionLogOpen: isTransactionLogAppOpen
     }
   };
 
@@ -405,20 +413,6 @@ function installPublicApi({ runtimeReady = false } = {}) {
         submitRequest,
         isActiveGM,
         diagnostics: socketDiagnostics
-      },
-      ui: {
-        openInventory: openInventoryApp,
-        closeInventory: closeInventoryApp,
-        isInventoryOpen: isInventoryAppOpen,
-        refreshInventory: forceInventoryRefresh,
-        scheduleInventoryRefresh,
-        openCurrencyManager,
-        openLootPrep: openLootPrepApp,
-        closeLootPrep: closeLootPrepApp,
-        isLootPrepOpen: isLootPrepAppOpen,
-        openTransactionLog: openTransactionLogApp,
-        closeTransactionLog: closeTransactionLogApp,
-        isTransactionLogOpen: isTransactionLogAppOpen
       },
       transactionLog: TransactionLog,
       transactionLogQuery: TransactionLogQuery,
