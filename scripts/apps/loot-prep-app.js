@@ -1,5 +1,5 @@
 /**
- * Quartermaster — GM Loot Prep App (v0.1.2)
+ * Quartermaster — GM Loot Prep App (v0.1.9)
  *
  * Features:
  *   - Custom Resources (CRUD)
@@ -93,6 +93,7 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
       "delete-currency":       LootPrepApp.onDeleteCurrency,
       // Folders
       "create-folder":      LootPrepApp.onCreateFolder,
+      "toggle-folder":      LootPrepApp.onToggleFolder,
       "rename-folder":      LootPrepApp.onRenameFolder,
       "edit-folder-note":   LootPrepApp.onEditFolderNote,
       "delete-folder":      LootPrepApp.onDeleteFolder,
@@ -103,7 +104,8 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static PARTS = {
     body: {
       template: "modules/quartermaster/templates/loot-prep.hbs",
-      classes: ["quartermaster-body"]
+      classes: ["quartermaster-body"],
+      scrollable: [""]
     }
   };
 
@@ -157,12 +159,18 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
 
     // Group items and currency by folder
+    this._collapsedFolders ??= new Set();
+    const liveFolderIds = new Set(folders.map(folder => folder.id));
+    for (const folderId of this._collapsedFolders) {
+      if (!liveFolderIds.has(folderId)) this._collapsedFolders.delete(folderId);
+    }
     const folderData = folders.map(f => {
       const fItems = hiddenItems.filter(i => i.folderId === f.id);
       const fCurrency = currencyEntries.filter(c => c.folderId === f.id);
       const note = getFolderNote(f);
       return {
         ...f, note, hasNote: !!note, items: fItems, currency: fCurrency,
+        collapsed: this._collapsedFolders.has(f.id),
         totalEntries: fItems.length + fCurrency.length
       };
     });
@@ -199,16 +207,8 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
-  _preRender(context, options) {
-    try { super._preRender(context, options); } catch {}
-    this._savedScroll = this.element?.scrollTop ?? 0;
-  }
-
   async _onRender(context, options) {
     await super._onRender(context, options);
-    if (this._savedScroll > 0 && this.element) {
-      this.element.scrollTop = this._savedScroll;
-    }
     attachHiddenItemDragDrop(this);
     _wireHiddenItemDrag(this);
     _wireDoubleClick(this);
@@ -412,6 +412,37 @@ export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const folder = await createFolder(result);
       if (folder) this.render();
     }
+  }
+
+  static onToggleFolder(event, target) {
+    if (!game.user.isGM) return;
+    const folderId = target.dataset.folderId;
+    if (!folderId) return;
+
+    const folder = target.closest(".qm-folder");
+    if (!folder) return;
+
+    this._collapsedFolders ??= new Set();
+    const collapsed = !this._collapsedFolders.has(folderId);
+    if (collapsed) this._collapsedFolders.add(folderId);
+    else this._collapsedFolders.delete(folderId);
+
+    folder.classList.toggle("qm-folder-collapsed", collapsed);
+    const contents = folder.querySelector(".qm-hidden-item-list");
+    if (contents) contents.hidden = collapsed;
+
+    target.setAttribute("aria-expanded", String(!collapsed));
+    target.title = `${collapsed ? "Expand" : "Collapse"} folder`;
+    const folderName = folder.querySelector(".qm-folder-name")?.textContent?.trim() || "folder";
+    target.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${folderName}`);
+
+    const chevron = target.querySelector(".qm-folder-chevron");
+    chevron?.classList.toggle("fa-chevron-right", collapsed);
+    chevron?.classList.toggle("fa-chevron-down", !collapsed);
+
+    const folderIcon = folder.querySelector(".qm-folder-icon");
+    folderIcon?.classList.toggle("fa-folder", collapsed);
+    folderIcon?.classList.toggle("fa-folder-open", !collapsed);
   }
 
   static async onRenameFolder(event, target) {

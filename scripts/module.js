@@ -230,10 +230,12 @@ Hooks.once("ready", async () => {
  *   1. Inject the two Quartermaster buttons (sidebar.js)
  *   2. Suppress the backing actor from the visible actor list (backing-actor.js)
  */
-Hooks.on("renderActorDirectory", (app, html, data) => {
+function decorateActorDirectory(app, html) {
   suppressBackingActorFromDirectory(app, html);
   injectSidebarButtons(app, html);
-});
+}
+
+Hooks.on("renderActorDirectory", decorateActorDirectory);
 
 /**
  * Hook: renderUserConfig

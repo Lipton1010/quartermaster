@@ -23,6 +23,8 @@ import { MODULE_ID, MODULE_TITLE, FLAGS, SETTINGS } from "./constants.js";
 const BACKING_ACTOR_NAME = "Quartermaster Vault";
 const BACKING_ACTOR_IMG = "icons/containers/bags/sack-leather-tan.webp";
 const DATA_VERSION_FLAG = "dataVersion";
+const observedDirectoryRoots = new WeakMap();
+const pendingDirectoryRoots = new WeakSet();
 
 /**
  * Return the backing actor, or null if not yet created or not found.
@@ -205,6 +207,8 @@ export function suppressBackingActorFromDirectory(app, html) {
   const rootEl = getRenderedElement(html);
   if (!rootEl) return;
 
+  observeActorDirectory(app, rootEl);
+
   // V14 uses data-entry-id; earlier versions used data-document-id
   const selectors = [
     `[data-entry-id="${actor.id}"]`,
@@ -217,6 +221,37 @@ export function suppressBackingActorFromDirectory(app, html) {
       el.remove();
     }
   }
+}
+
+/**
+ * Re-apply suppression when another module refreshes a directory part after
+ * Foundry's render hook. This keeps the vault private without modifying the
+ * Actor collection or interfering with other modules' directory wrappers.
+ */
+function observeActorDirectory(app, rootEl) {
+  if ((typeof MutationObserver !== "function") || observedDirectoryRoots.has(rootEl)) return;
+
+  const observer = new MutationObserver((records) => {
+    if (!rootEl.isConnected) {
+      observer.disconnect();
+      observedDirectoryRoots.delete(rootEl);
+      return;
+    }
+    if (!records.some(record => record.addedNodes.length)) return;
+    if (pendingDirectoryRoots.has(rootEl)) return;
+    pendingDirectoryRoots.add(rootEl);
+    queueMicrotask(() => {
+      pendingDirectoryRoots.delete(rootEl);
+      suppressBackingActorFromDirectory(app, rootEl);
+    });
+  });
+
+  observer.observe(rootEl, { childList: true, subtree: true });
+  observedDirectoryRoots.set(rootEl, observer);
+  app?.addEventListener?.("close", () => {
+    observer.disconnect();
+    observedDirectoryRoots.delete(rootEl);
+  }, { once: true });
 }
 
 /**

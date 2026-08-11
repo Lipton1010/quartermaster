@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.9] - 2026-08-10
+
+### Added
+- Add collapsible folders to GM Loot Prep so large encounter lists can be navigated without losing context.
+
+### Fixed
+- Make the GM Loot Prep body a Foundry-native scrollable part and preserve its position when loot changes trigger a re-render.
+- Detect Actors-directory refreshes from other modules and re-apply the Quartermaster controls and private Vault suppression.
+
+
 ## [0.1.8] - 2026-07-22
 
 ### Added
@@ -343,7 +353,12 @@ Initial public release. Core feature set complete through build step 18.
 - Sidebar injection stubs (pending step 4 of Build Sequence)
 
 
-[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.9
+[0.1.8]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.8
+[0.1.7]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.7
+[0.1.6]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.6
+[0.1.5]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.5
 [0.1.4]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.2

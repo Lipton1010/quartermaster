@@ -1,4 +1,4 @@
-{{!-- Quartermaster — GM Loot Prep (v0.1.2) --}}
+{{!-- Quartermaster — GM Loot Prep (v0.1.9) --}}
 
 <div class="quartermaster-loot-prep-root">
 
@@ -72,9 +72,16 @@
 
     {{!-- Folders --}}
     {{#each folders}}
-      <div class="qm-folder qm-hidden-drop-zone" data-folder-id="{{this.id}}">
+      <div class="qm-folder qm-hidden-drop-zone{{#if this.collapsed}} qm-folder-collapsed{{/if}}" data-folder-id="{{this.id}}">
         <div class="qm-folder-header" data-folder-id="{{this.id}}" title="Right-click to add or edit this folder's note">
-          <i class="fa-solid fa-folder-open"></i>
+          <button type="button" id="qm-folder-toggle-{{this.id}}" data-action="toggle-folder" data-folder-id="{{this.id}}"
+                  class="qm-folder-btn qm-folder-toggle" aria-expanded="{{#unless this.collapsed}}true{{else}}false{{/unless}}"
+                  aria-controls="qm-folder-contents-{{this.id}}"
+                  aria-label="{{#if this.collapsed}}Expand{{else}}Collapse{{/if}} {{this.name}}"
+                  title="{{#if this.collapsed}}Expand{{else}}Collapse{{/if}} folder">
+            <i class="fa-solid qm-folder-chevron {{#if this.collapsed}}fa-chevron-right{{else}}fa-chevron-down{{/if}}" aria-hidden="true"></i>
+          </button>
+          <i class="fa-solid qm-folder-icon {{#if this.collapsed}}fa-folder{{else}}fa-folder-open{{/if}}" aria-hidden="true"></i>
           <span class="qm-folder-name">{{this.name}}</span>
           <span class="qm-folder-count">({{this.totalEntries}})</span>
           {{#if this.hasNote}}
@@ -90,7 +97,7 @@
             <button type="button" data-action="delete-folder" data-folder-id="{{this.id}}" title="Delete folder" class="qm-folder-btn qm-prep-danger"><i class="fa-solid fa-trash"></i></button>
           </div>
         </div>
-        <ol class="qm-hidden-item-list" data-folder-id="{{this.id}}">
+        <ol id="qm-folder-contents-{{this.id}}" class="qm-hidden-item-list" data-folder-id="{{this.id}}"{{#if this.collapsed}} hidden{{/if}}>
           {{#each this.currency}}
             <li class="qm-hidden-item-row qm-hidden-currency-row" data-currency-id="{{this.id}}">
               <input type="checkbox" class="qm-hidden-item-select" data-item-id="{{this.id}}" title="Select" />

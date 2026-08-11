@@ -25,6 +25,8 @@ import { createInventoryTokenShortcut } from "./inventory-token.js";
 
 const CONTAINER_CLASS = "quartermaster-sidebar-actions";
 const BUTTON_CLASS = "quartermaster-sidebar-btn";
+const observedRoots = new WeakMap();
+const pendingRoots = new WeakSet();
 
 /**
  * Inject the Quartermaster buttons into the Actors directory header.
@@ -37,13 +39,16 @@ export function injectSidebarButtons(app, html) {
   const rootEl = normalizeHtml(html);
   if (!rootEl) return;
 
+  observeDirectoryRoot(app, rootEl);
+
   // Idempotency: skip if our container is already present
   if (rootEl.querySelector(`.${CONTAINER_CLASS}`)) return;
 
   // Find the directory header. V14 ApplicationV2 directories use
   // `.directory-header`; older versions use `header.directory-header`
   // or `header`. Try a few selectors before giving up.
-  const header = rootEl.querySelector(".directory-header")
+  const header = rootEl.querySelector('[data-application-part="header"]')
+              ?? rootEl.querySelector(".directory-header")
               ?? rootEl.querySelector("header.directory-header")
               ?? rootEl.querySelector("header");
 
@@ -100,6 +105,38 @@ export function injectSidebarButtons(app, html) {
   // Insert at the very top of the header so our buttons sit above the
   // existing Create Actor / Create Folder controls.
   header.insertBefore(container, header.firstChild);
+}
+
+/**
+ * Some directory integrations replace the header or directory part after the
+ * normal render hook has finished. Watch the application root and restore the
+ * Quartermaster controls when that happens.
+ */
+function observeDirectoryRoot(app, rootEl) {
+  if ((typeof MutationObserver !== "function") || observedRoots.has(rootEl)) return;
+
+  const observer = new MutationObserver((records) => {
+    if (!rootEl.isConnected) {
+      observer.disconnect();
+      observedRoots.delete(rootEl);
+      return;
+    }
+    if (!records.some(record => record.addedNodes.length || record.removedNodes.length)) return;
+    if (rootEl.querySelector(`.${CONTAINER_CLASS}`)) return;
+    if (pendingRoots.has(rootEl)) return;
+    pendingRoots.add(rootEl);
+    queueMicrotask(() => {
+      pendingRoots.delete(rootEl);
+      injectSidebarButtons(app, rootEl);
+    });
+  });
+
+  observer.observe(rootEl, { childList: true, subtree: true });
+  observedRoots.set(rootEl, observer);
+  app?.addEventListener?.("close", () => {
+    observer.disconnect();
+    observedRoots.delete(rootEl);
+  }, { once: true });
 }
 
 function buildButton({ cssClass, icon, labelKey, label, onClick }) {

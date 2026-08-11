@@ -1138,9 +1138,15 @@ body.qm-dragging {
 .quartermaster .quartermaster-loot-prep-root {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 16px;
   padding: 10px 12px;
   height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .quartermaster .qm-prep-section {
@@ -2031,6 +2037,14 @@ body.qm-dragging {
   border: 1px solid rgba(200, 160, 50, 0.2);
   border-radius: 5px;
   overflow: hidden;
+}
+
+.quartermaster-loot-prep-root .qm-folder-collapsed .qm-hidden-item-list {
+  display: none;
+}
+
+.quartermaster-loot-prep-root .qm-folder-toggle {
+  flex: 0 0 auto;
 }
 
 .quartermaster-loot-prep-root .qm-folder-header {
