@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.10] - 2026-08-16
+
+### Changed
+- Verify compatibility with Foundry Virtual Tabletop v14.366. No Quartermaster runtime changes are required by this Foundry patch.
+
+
 ## [0.1.9] - 2026-08-10
 
 ### Added

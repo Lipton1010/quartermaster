@@ -39,7 +39,7 @@ A simple way to think about it:
 
 ## Requirements
 
-- Foundry VTT v13 or newer (verified on v14.365)
+- Foundry VTT v13 or newer (verified on v14.366)
 - dnd5e system 5.0.0 or newer (verified on 5.3.3)
 
 ## Installation
