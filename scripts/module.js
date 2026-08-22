@@ -54,7 +54,10 @@ import {
 import * as Sanitization from "./sanitization.js";
 import * as WeightCache from "./weight-cache.js";
 import * as ClaimCommit from "./claim-commit.js";
-import { registerEgressInterceptor } from "./drag-drop.js";
+import {
+  registerEgressInterceptor,
+  attachActorDirectoryDropTargets
+} from "./drag-drop.js";
 import {
   runStep3Tests,
   showDiagnostics,
@@ -233,6 +236,7 @@ Hooks.once("ready", async () => {
 function decorateActorDirectory(app, html) {
   suppressBackingActorFromDirectory(app, html);
   injectSidebarButtons(app, html);
+  attachActorDirectoryDropTargets(app, html);
 }
 
 Hooks.on("renderActorDirectory", decorateActorDirectory);

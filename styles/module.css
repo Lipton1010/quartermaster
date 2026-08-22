@@ -528,6 +528,19 @@ body.qm-dragging {
   user-select: none;
 }
 
+/* A character sheet accepts Quartermaster items on every tab, not only its
+   inventory tab. The directory rule covers the rectangular Actor entries. */
+.qm-actor-drop-target {
+  outline: 2px dashed var(--color-warm-2, #c9a96e);
+  outline-offset: -5px;
+}
+
+.qm-actor-directory-drop-target {
+  outline: 2px dashed var(--color-warm-2, #c9a96e);
+  outline-offset: -3px;
+  background: rgba(201, 169, 110, 0.1);
+}
+
 
 /* ------------------------------------------------------------
  * Currency tile +/- buttons (step 10)

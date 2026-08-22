@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.11] - 2026-08-21
+
+### Added
+- Dragging an item from Shared Party Inventory or GM Loot Prep to a player-character entry in the Actors directory now transfers it directly into that character's inventory.
+
+### Fixed
+- Quartermaster item drops now work anywhere on a character sheet, including when a non-inventory tab is active.
+- Verify compatibility with Foundry Virtual Tabletop v14.367. Its ActorDelta, UI ordering, setup-access, localization, and accessibility fixes require no additional Quartermaster runtime changes.
+
+
 ## [0.1.10] - 2026-08-16
 
 ### Changed
@@ -359,7 +369,9 @@ Initial public release. Core feature set complete through build step 18.
 - Sidebar injection stubs (pending step 4 of Build Sequence)
 
 
-[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.11
+[0.1.10]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.10
 [0.1.9]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.9
 [0.1.8]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.8
 [0.1.7]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.7

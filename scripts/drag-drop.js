@@ -43,6 +43,13 @@ import { writeEntry } from "./transaction-log.js";
 const QM_EGRESS_MARKER = "qmEgressDrag";
 
 /**
+ * The browser intentionally restricts reading DataTransfer during dragover.
+ * Keep the current Quartermaster drag locally as well so our direct sheet and
+ * Actors-directory drop targets can opt in during that phase.
+ */
+let activeQuartermasterDrag = null;
+
+/**
  * Marker on drag data from the inventory popup for the re-hide flow.
  * The Loot Prep hidden items drop zone checks for this.
  */
@@ -53,6 +60,16 @@ export const QM_REHIDE_MARKER = "qmReHideDrag";
  * The inventory drop zone checks for this to trigger a reveal.
  */
 export const QM_LOOTPREP_DRAG_MARKER = "qmLootPrepDrag";
+
+/**
+ * Record a drag started by one of Quartermaster's item lists.  This is public
+ * because GM Loot Prep owns its drag source in a separate application module.
+ *
+ * @param {object|null} data
+ */
+export function setActiveQuartermasterDrag(data) {
+  activeQuartermasterDrag = data ?? null;
+}
 
 // ============================================================
 // Inventory popup wiring (called from InventoryApp._onRender)
@@ -225,6 +242,7 @@ function onItemRowDragStart(event) {
   // incompatible effectAllowed/dropEffect, the browser shows the no-drop
   // cursor and the drop event never fires. "all" matches any dropEffect.
   event.dataTransfer.effectAllowed = "all";
+  setActiveQuartermasterDrag(payload);
 
   document.body.classList.add("qm-dragging");
   event.currentTarget.classList.add("qm-being-dragged");
@@ -235,6 +253,7 @@ function onItemRowDragStart(event) {
 }
 
 function onItemRowDragEnd(event) {
+  setActiveQuartermasterDrag(null);
   document.body.classList.remove("qm-dragging");
   event.currentTarget.classList.remove("qm-being-dragged");
 }
@@ -285,6 +304,120 @@ export function registerEgressInterceptor() {
 
     return false; // stop default drop handling
   });
+
+  // System sheets do not consistently attach a drop handler to every tab.
+  // Bind directly to each rendered sheet as well, at capture phase, so a
+  // Quartermaster item can be given to its actor from any visible tab.
+  Hooks.on("renderActorSheet", (app, html) => {
+    attachActorSheetDropTarget(app, html);
+  });
+
+  // A module can be enabled or reloaded while a sheet is already open.
+  for (const app of Object.values(ui.windows ?? {})) {
+    attachActorSheetDropTarget(app);
+  }
+}
+
+/**
+ * Attach direct Quartermaster drop handling to a rendered Actor sheet.  The
+ * native `dropActorSheetData` hook remains as a compatibility fallback for
+ * systems that use it, while this listener covers non-inventory tabs and
+ * systems that do not emit that hook.
+ *
+ * @param {Application} app
+ * @param {HTMLElement|jQuery} [html]
+ */
+export function attachActorSheetDropTarget(app, html) {
+  const destActor = app?.actor ?? app?.document;
+  const root = getHTMLElement(html) ?? getHTMLElement(app?.element);
+  if (!destActor?.isEmbedded && destActor?.documentName !== "Actor") return;
+  if (!root || root.dataset.qmActorSheetDropBound === "true") return;
+
+  root.dataset.qmActorSheetDropBound = "true";
+  root.addEventListener("dragover", (event) => {
+    if (!getQuartermasterDragData(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    root.classList.add("qm-actor-drop-target");
+  }, true);
+  root.addEventListener("dragleave", (event) => {
+    if (!root.contains(event.relatedTarget)) {
+      root.classList.remove("qm-actor-drop-target");
+    }
+  }, true);
+  root.addEventListener("drop", (event) => {
+    const data = getQuartermasterDragData(event);
+    root.classList.remove("qm-actor-drop-target");
+    if (!data) return;
+
+    // Stop the sheet's own drop path: it would otherwise create a copy and
+    // leave the source in Quartermaster storage.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void handleQuartermasterActorDrop(destActor, data);
+  }, true);
+}
+
+/**
+ * Make the rectangular player-character entries in the Actors directory valid
+ * Quartermaster destinations. Called whenever that directory is rendered.
+ *
+ * @param {ActorDirectory} app
+ * @param {HTMLElement|jQuery} html
+ */
+export function attachActorDirectoryDropTargets(app, html) {
+  const root = getHTMLElement(html) ?? getHTMLElement(app?.element);
+  if (!root) return;
+
+  // V14 uses data-entry-id. The document-id variant keeps the feature usable
+  // on V13 and on directory-enhancement modules.
+  const entries = root.querySelectorAll("[data-entry-id], [data-document-id]");
+  for (const entry of entries) {
+    if (entry.dataset.qmActorDirectoryDropBound === "true") continue;
+    const actorId = entry.dataset.entryId ?? entry.dataset.documentId;
+    if (!game.actors?.get(actorId)) continue;
+
+    entry.dataset.qmActorDirectoryDropBound = "true";
+    entry.addEventListener("dragover", (event) => {
+      if (!getQuartermasterDragData(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      entry.classList.add("qm-actor-directory-drop-target");
+    }, true);
+    entry.addEventListener("dragleave", (event) => {
+      if (!entry.contains(event.relatedTarget)) {
+        entry.classList.remove("qm-actor-directory-drop-target");
+      }
+    }, true);
+    entry.addEventListener("drop", (event) => {
+      const data = getQuartermasterDragData(event);
+      entry.classList.remove("qm-actor-directory-drop-target");
+      if (!data) return;
+
+      const destActor = game.actors.get(actorId);
+      if (!destActor) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void handleQuartermasterActorDrop(destActor, data);
+    }, true);
+  }
+}
+
+/**
+ * Route every Quartermaster-originated item drop through the corresponding
+ * audited transfer workflow.
+ */
+async function handleQuartermasterActorDrop(destActor, data) {
+  try {
+    if (data[QM_LOOTPREP_DRAG_MARKER]) {
+      await handleLootPrepToSheetDrop(destActor, data);
+      return;
+    }
+    await handleEgressDrop(destActor, data);
+  } catch (err) {
+    console.error(`${MODULE_TITLE} | Quartermaster actor drop failed`, err);
+    ui.notifications.error(`${MODULE_TITLE}: failed to transfer item. Check the console.`);
+  }
 }
 
 async function handleEgressDrop(destActor, data) {
@@ -538,5 +671,26 @@ function parseDropData(event) {
       // try the next source
     }
   }
+  return null;
+}
+
+/**
+ * Return Quartermaster's drag payload when this is one of our two egress
+ * sources. During dragover, browsers may hide DataTransfer contents, so use
+ * the payload remembered at dragstart as a same-client fallback.
+ */
+function getQuartermasterDragData(event) {
+  const data = parseDropData(event) ?? activeQuartermasterDrag;
+  if (!data?.type || data.type !== "Item") return null;
+  if (!data[QM_EGRESS_MARKER] && !data[QM_LOOTPREP_DRAG_MARKER]) return null;
+  return data;
+}
+
+/**
+ * Normalize Foundry's V13 jQuery and V14 HTMLElement render values.
+ */
+function getHTMLElement(value) {
+  if (value instanceof HTMLElement) return value;
+  if (value?.[0] instanceof HTMLElement) return value[0];
   return null;
 }

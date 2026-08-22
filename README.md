@@ -26,7 +26,7 @@ A simple way to think about it:
 - GM Loot Prep tab with folder organization and inherited folder/item notes for encounter locations
 - Currency loot staging for built-in and custom currencies, revealed directly into the shared balance
 - One-click or bulk loot reveal; Shift+click reveal posts a chat announcement
-- Drag items from Loot Prep directly to character sheets to distribute loot
+- Drag items from Loot Prep or Shared Party Inventory directly to any character-sheet tab or an Actor-directory character entry to distribute loot
 - Custom counter resources (ammunition, charges, consumables) with CRUD UI
 - Sort-by dropdown: A–Z, By Type with section headers, Loot First, or Manual drag-to-reorder
 - Double-click items to open their sheet
@@ -39,7 +39,7 @@ A simple way to think about it:
 
 ## Requirements
 
-- Foundry VTT v13 or newer (verified on v14.366)
+- Foundry VTT v13 or newer (verified on v14.367)
 - dnd5e system 5.0.0 or newer (verified on 5.3.3)
 
 ## Installation
@@ -52,7 +52,7 @@ Quartermaster is available directly through the Foundry VTT package browser.
 
 ### Manual Installation
 If you need to install a specific build or are testing a pre-release version, paste this manifest URL into Foundry's "Install Module" dialog:
-`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.9/module.json`
+`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.11/module.json`
 
 ## Macro integration
 
@@ -78,7 +78,7 @@ The macro works for both players and GMs while Quartermaster is active.
 
 ## Status
 
-**v0.1.9 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with collapsible folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
+**v0.1.11 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with collapsible folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
 
 ## License
 

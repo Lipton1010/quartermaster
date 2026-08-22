@@ -32,7 +32,11 @@ import {
   getEffectiveItemNote, getFolderNote, getItemNote, setFolderNote, setItemNote
 } from "../loot-prep-notes.js";
 import { sanitizeItemForTransfer } from "../sanitization.js";
-import { QM_REHIDE_MARKER, QM_LOOTPREP_DRAG_MARKER } from "../drag-drop.js";
+import {
+  QM_REHIDE_MARKER,
+  QM_LOOTPREP_DRAG_MARKER,
+  setActiveQuartermasterDrag
+} from "../drag-drop.js";
 import { writeEntry } from "../transaction-log.js";
 import { getCurrencies, getCurrency } from "../currencies.js";
 import { openCurrencyManager } from "./currency-manager-app.js";
@@ -981,16 +985,23 @@ function _wireHiddenItemDrag(app) {
       const actor = getBackingActor();
       const item = actor?.items.get(itemId);
       if (!item) return;
-      event.dataTransfer.setData("text/plain", JSON.stringify({
+      const payload = {
         type: "Item", uuid: item.uuid,
         [QM_LOOTPREP_DRAG_MARKER]: true,
         qmSourceItemUuid: item.uuid,
         qmSourceItemName: item.name
-      }));
+      };
+      event.dataTransfer.setData("text/plain", JSON.stringify(payload));
       event.dataTransfer.effectAllowed = "all";
+      setActiveQuartermasterDrag(payload);
+      document.body.classList.add("qm-dragging");
       row.classList.add("qm-being-dragged");
     });
-    row.addEventListener("dragend", () => row.classList.remove("qm-being-dragged"));
+    row.addEventListener("dragend", () => {
+      setActiveQuartermasterDrag(null);
+      document.body.classList.remove("qm-dragging");
+      row.classList.remove("qm-being-dragged");
+    });
   }
 }
 
