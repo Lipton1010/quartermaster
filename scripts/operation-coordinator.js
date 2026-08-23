@@ -373,7 +373,11 @@ export function inspectRequestReplay({
   if (typeof requestId !== "string" || !requestId.trim()) return { state: "unverifiable" };
   try {
     const binding = createRequestBinding({ requester, operationType, timestamp, requestData });
-    return safelyInspectTombstone(requestId, binding);
+    const tombstone = safelyInspectTombstone(requestId, binding);
+    if (tombstone.state !== "none") return tombstone;
+    const cached = inspectCachedRequest(requestId, binding);
+    if (cached.state !== "none") return cached;
+    return inspectDurableRequest(requestId, binding);
   } catch {
     return { state: "unverifiable" };
   }

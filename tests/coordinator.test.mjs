@@ -450,3 +450,93 @@ test("an orphan pending tombstone fails closed before cache or log fallback", as
   assert.deepEqual(result, { status: "failed", error: "request-recovery-required" });
   assert.equal(fnCalls, 0);
 });
+
+test("pending and recovery-required tombstones survive later mutations after the replay window", async () => {
+  const oldTimestamp = Date.now() - 301_000;
+  staging.flags[FLAGS.OPERATION_TOMBSTONES] = [
+    {
+      version: 1,
+      requestId: "old-pending-approval",
+      requestFingerprint: "pending-fingerprint",
+      requester: "player-a",
+      operationType: "currencyApproval",
+      timestamp: oldTimestamp,
+      claimedAt: oldTimestamp,
+      state: "pending"
+    },
+    {
+      version: 1,
+      requestId: "old-recovery-required",
+      requestFingerprint: "recovery-fingerprint",
+      requester: "player-a",
+      operationType: "hiddenCurrencyReveal",
+      timestamp: oldTimestamp,
+      claimedAt: oldTimestamp,
+      state: "terminal",
+      terminalAt: oldTimestamp,
+      result: { status: "failed", error: "currency-reconciliation-required" }
+    },
+    {
+      version: 1,
+      requestId: "old-success",
+      requestFingerprint: "success-fingerprint",
+      requester: "player-a",
+      operationType: "currencyChange",
+      timestamp: oldTimestamp,
+      claimedAt: oldTimestamp,
+      state: "terminal",
+      terminalAt: oldTimestamp,
+      result: { status: "success", resultData: { applied: true } }
+    }
+  ];
+
+  const result = await Coordinator.executeOperation(request({
+    requestId: "fresh-unrelated",
+    timestamp: Date.now()
+  }));
+  assert.equal(result.status, "success");
+
+  const retained = new Map(
+    staging.flags[FLAGS.OPERATION_TOMBSTONES].map(record => [record.requestId, record])
+  );
+  assert.equal(retained.get("old-pending-approval")?.state, "pending");
+  assert.equal(
+    retained.get("old-recovery-required")?.result?.error,
+    "currency-reconciliation-required"
+  );
+  assert.equal(retained.has("old-success"), false);
+  assert.equal(retained.has("fresh-unrelated"), true);
+});
+
+test("inspectRequestReplay consults the durable log when the private tombstone is missing", async () => {
+  const timestamp = Date.now();
+  const requestId = "durable-inspect";
+  const requestData = {
+    type: "quartermaster.currencyChange",
+    payload: { currencyType: "gp", delta: 1, reason: "test" }
+  };
+  await Coordinator.executeOperation(request({ requestId, timestamp, requestData }));
+  staging.flags[FLAGS.OPERATION_TOMBSTONES] = [];
+  Coordinator._resetCacheForTesting();
+
+  const committed = Coordinator.inspectRequestReplay({
+    requestId,
+    requester: "player-a",
+    operationType: "currencyChange",
+    timestamp,
+    requestData
+  });
+  assert.equal(committed.state, "replay");
+  assert.equal(committed.result?.status, "success");
+
+  staging.flags[FLAGS.TRANSACTION_LOG] = staging.flags[FLAGS.TRANSACTION_LOG]
+    .filter(entry => entry.type === "operation.claim");
+  const pending = Coordinator.inspectRequestReplay({
+    requestId,
+    requester: "player-a",
+    operationType: "currencyChange",
+    timestamp,
+    requestData
+  });
+  assert.equal(pending.state, "pending");
+});

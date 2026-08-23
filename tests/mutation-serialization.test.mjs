@@ -94,4 +94,6 @@ test("currency approval cannot hold the shared currency mutation lock", () => {
   assert.ok(approvalStart >= 0 && approvalStart < currencyOperationStart);
   assert.match(dispatch, /resourceKeys: \[`currency-approval:\$\{requestId\}`\]/);
   assert.match(dispatch, /approvalResolved: true/);
+  assert.match(dispatch, /mutationTimestamp = Number.isFinite\(approval\.resultData\?\.approvedAt\)/);
+  assert.match(dispatch, /timestamp: mutationTimestamp/);
 });

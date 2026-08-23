@@ -105,4 +105,6 @@ test("the documented inventory UI facade exists before runtime activation", () =
 test("development documentation is excluded from the runtime archive", () => {
   const attributes = readFileSync(join(root, ".gitattributes"), "utf8");
   assert.match(attributes, /^docs\s+export-ignore$/m);
+  const validator = readFileSync(join(root, "tools", "validate-package.mjs"), "utf8");
+  assert.match(validator, /(?:tests\|tools\|docs\|test-data\|artifacts\|github\|\\\.github)/);
 });

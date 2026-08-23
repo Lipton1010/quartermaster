@@ -366,3 +366,69 @@ test("an expired reveal stamp with no pending claim rotates safely instead of br
   assert.equal(fixture.backing.system.currency.gp, 15);
   assert.deepEqual(fixture.stagingFlags[FLAGS.HIDDEN_CURRENCY], []);
 });
+
+test("an expired recovery-required reveal stamp does not rotate or credit twice", async () => {
+  const fixture = createFixture({ failCompensation: true, failHiddenRemoval: true });
+  const { Coordinator, HiddenCurrency } = await loadModules();
+
+  const result = await HiddenCurrency.revealHiddenCurrency("staged-gp");
+  assert.equal(result.status, "failed");
+  assert.equal(result.error, "currency-reconciliation-required");
+  assert.equal(result.recoveryRecorded, true);
+  assert.equal(fixture.backing.system.currency.gp, 15);
+  const stamped = fixture.stagingFlags[FLAGS.HIDDEN_CURRENCY][0];
+  assert.equal(stamped.revealRequestId, result.requestId);
+
+  Coordinator._resetCacheForTesting();
+  const originalNow = Date.now;
+  Date.now = () => stamped.revealRequestedAt + 301_000;
+  let retry;
+  try {
+    retry = await HiddenCurrency.revealHiddenCurrency("staged-gp");
+  } finally {
+    Date.now = originalNow;
+  }
+
+  assert.equal(retry.status, "failed");
+  assert.equal(retry.error, "recovery-reconciliation-required");
+  assert.equal(retry.requestId, result.requestId);
+  assert.equal(fixture.backing.system.currency.gp, 15);
+  assert.equal(
+    fixture.stagingFlags[FLAGS.HIDDEN_CURRENCY][0].revealRequestId,
+    result.requestId
+  );
+  assert.equal(
+    fixture.stagingFlags[FLAGS.HIDDEN_CURRENCY][0].revealRequestedAt,
+    stamped.revealRequestedAt
+  );
+});
+
+test("an expired recovery-required tombstone still fails closed without a recovery record", async () => {
+  const fixture = createFixture({ failCompensation: true, failHiddenRemoval: true });
+  const { Coordinator, HiddenCurrency } = await loadModules();
+
+  const result = await HiddenCurrency.revealHiddenCurrency("staged-gp");
+  assert.equal(result.recoveryRecorded, true);
+  assert.equal(fixture.backing.system.currency.gp, 15);
+  const stamped = fixture.stagingFlags[FLAGS.HIDDEN_CURRENCY][0];
+
+  fixture.stagingFlags[FLAGS.RECOVERY_RECORDS] = [];
+  Coordinator._resetCacheForTesting();
+  const originalNow = Date.now;
+  Date.now = () => stamped.revealRequestedAt + 301_000;
+  let retry;
+  try {
+    retry = await HiddenCurrency.revealHiddenCurrency("staged-gp");
+  } finally {
+    Date.now = originalNow;
+  }
+
+  assert.equal(retry.status, "failed");
+  assert.equal(retry.error, "recovery-reconciliation-required");
+  assert.equal(retry.requestId, result.requestId);
+  assert.equal(fixture.backing.system.currency.gp, 15);
+  assert.equal(
+    fixture.stagingFlags[FLAGS.HIDDEN_CURRENCY][0].revealRequestId,
+    result.requestId
+  );
+});

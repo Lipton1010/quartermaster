@@ -217,9 +217,10 @@ async function prepareRevealRequest(staging, entryId) {
           timestamp: persistedTimestamp,
           requestData: buildRevealRequestData(current)
         });
-        // An expired pending/unverifiable claim may represent a committed
-        // credit whose cleanup never finished. Never replace its identity.
-        if (isUnsafeRevealReplay(replay)) {
+        // An expired stamp may be rotated only when there is no pending,
+        // unverifiable, colliding, successful, or recovery-required record.
+        // Interrupted credits must continue to fail closed.
+        if (hasPendingRecovery(persistedRequestId) || isUnsafeRevealReplay(replay)) {
           return {
             status: "failed",
             error: "recovery-reconciliation-required",
@@ -280,10 +281,22 @@ function isSafelyRetryableRevealFailure(result) {
 }
 
 function isUnsafeRevealReplay(replay) {
-  return replay?.state === "pending"
-    || replay?.state === "unverifiable"
-    || replay?.state === "collision"
-    || (replay?.state === "replay" && replay.result?.status === "success");
+  if (!replay || typeof replay !== "object") return true;
+  if (replay.state === "pending"
+      || replay.state === "unverifiable"
+      || replay.state === "collision") {
+    return true;
+  }
+  if (replay.state !== "replay") return false;
+  return replay.result?.status === "success"
+    || isRecoveryRequiredRevealResult(replay.result);
+}
+
+function isRecoveryRequiredRevealResult(result) {
+  return result?.error === "recovery-reconciliation-required"
+    || result?.error === "currency-reconciliation-required"
+    || result?.error === "request-recovery-required"
+    || result?.error === "operation-reconciliation-required";
 }
 
 async function performCurrencyReveal({

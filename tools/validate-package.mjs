@@ -50,7 +50,7 @@ const required = [
 const forbidden = [
   /(^|\/)\.git(?:\/|$)/,
   /(^|\/)node_modules(?:\/|$)/,
-  /(^|\/)(?:tests|tools|test-data|artifacts|github|\.github)(?:\/|$)/,
+  /(^|\/)(?:tests|tools|docs|test-data|artifacts|github|\.github)(?:\/|$)/,
   /(^|\/)package(?:-lock)?\.json$/,
   /(^|\/)test-step\d+\.js$/
 ];

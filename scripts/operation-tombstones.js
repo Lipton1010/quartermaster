@@ -154,8 +154,20 @@ function pruneExpiredRecords(records, { maxAgeMs, now, preserveRequestId = null 
     // Malformed records are security evidence, not disposable presentation
     // data. Keep them so the matching request continues to fail closed.
     if (typeof record?.timestamp !== "number" || !Number.isFinite(record.timestamp)) return true;
+    // Pending claims can outlive the replay window: GM approval waits
+    // indefinitely, and an interrupted credit must remain fail-closed even
+    // after later mutations prune ordinary terminal history.
+    if (record.state === "pending") return true;
+    if (isRecoveryRequiredResult(record.result)) return true;
     return record.timestamp >= cutoff;
   });
+}
+
+function isRecoveryRequiredResult(result) {
+  return result?.error === "recovery-reconciliation-required"
+    || result?.error === "currency-reconciliation-required"
+    || result?.error === "request-recovery-required"
+    || result?.error === "operation-reconciliation-required";
 }
 
 function normalizeResult(result) {
