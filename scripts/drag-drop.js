@@ -253,6 +253,140 @@ function onItemRowDragEnd(event) {
 // Egress interception on Actor sheets
 // ============================================================
 
+let captureInterceptorRegistered = false;
+let hookInterceptorRegistered = false;
+const handledSheetDropKeys = new Set();
+let clearHandledSheetDropTimer = null;
+
+function actorSheetFromApp(sheet) {
+  const actor = sheet?.document ?? sheet?.actor ?? sheet?.object ?? null;
+  if (actor?.documentName === "Actor") return { actor, sheet };
+  return null;
+}
+
+function unwrapDropTarget(target) {
+  if (!target) return null;
+  if (target.parentElement || typeof target.id === "string") return target;
+  if (target.jquery && target[0]) return target[0];
+  return target;
+}
+
+/**
+ * Resolve the destination Actor for a DOM drop by walking from the event
+ * target up to an ApplicationV2 root in `foundry.applications.instances`,
+ * or a legacy Application (ApplicationV1) registered in `ui.windows`.
+ * Inert when neither registry yields an Actor sheet.
+ *
+ * @param {DragEvent} event
+ * @returns {{ actor: Actor, sheet: Application }|null}
+ */
+export function resolveActorSheetFromDropEvent(event) {
+  let element = unwrapDropTarget(event?.target ?? null);
+
+  while (element) {
+    const id = element.id;
+    if (id) {
+      const instances = globalThis.foundry?.applications?.instances;
+      if (instances && typeof instances.get === "function" && instances.has(id)) {
+        const resolved = actorSheetFromApp(instances.get(id));
+        if (resolved) return resolved;
+      }
+
+      const windows = globalThis.ui?.windows;
+      if (windows && typeof windows === "object") {
+        for (const sheet of Object.values(windows)) {
+          if (sheet?.id !== id) continue;
+          const resolved = actorSheetFromApp(sheet);
+          if (resolved) return resolved;
+        }
+      }
+    }
+    element = element.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Build a short-lived dedup key so capture-phase and hook paths cannot both
+ * submit the same marked drop.
+ */
+export function makeSheetDropDedupKey(destActor, data) {
+  const destRef = destActor?.uuid ?? destActor?.id ?? "";
+  const sourceRef = data?.qmSourceItemUuid ?? data?.uuid ?? "";
+  return `${destRef}:${sourceRef}`;
+}
+
+/** @internal Test helper — clears the in-memory dedup registry. */
+export function resetSheetDropDedupForTests() {
+  handledSheetDropKeys.clear();
+  if (clearHandledSheetDropTimer) {
+    clearTimeout(clearHandledSheetDropTimer);
+    clearHandledSheetDropTimer = null;
+  }
+}
+
+function wasSheetDropHandled(key) {
+  return handledSheetDropKeys.has(key);
+}
+
+function markSheetDropHandled(key) {
+  handledSheetDropKeys.add(key);
+  if (clearHandledSheetDropTimer) clearTimeout(clearHandledSheetDropTimer);
+  clearHandledSheetDropTimer = setTimeout(() => {
+    handledSheetDropKeys.clear();
+    clearHandledSheetDropTimer = null;
+  }, 0);
+}
+
+function isMarkedSheetDrop(data) {
+  return Boolean(data?.[QM_EGRESS_MARKER] || data?.[QM_LOOTPREP_DRAG_MARKER]);
+}
+
+function routeMarkedSheetDrop(destActor, data) {
+  const dedupKey = makeSheetDropDedupKey(destActor, data);
+  if (wasSheetDropHandled(dedupKey)) return null;
+
+  markSheetDropHandled(dedupKey);
+
+  if (data?.[QM_LOOTPREP_DRAG_MARKER]) {
+    return handleLootPrepToSheetDrop(destActor, data).catch((err) => {
+      console.error(`${MODULE_TITLE} | Loot prep to sheet drop failed`, err);
+      ui.notifications.error(`${MODULE_TITLE}: failed to transfer item. Check the console.`);
+    });
+  }
+
+  return handleEgressDrop(destActor, data).catch((err) => {
+    console.error(`${MODULE_TITLE} | Egress drop handler failed`, err);
+    ui.notifications.error(
+      `${MODULE_TITLE}: failed to transfer item. Check the console.`
+    );
+  });
+}
+
+/**
+ * Capture-phase document listener for marked Quartermaster sheet drops.
+ * Runs before sheet-local handlers (including systems that bypass
+ * `dropActorSheetData`) and is inert for all other drags.
+ *
+ * @param {DragEvent} event
+ */
+export async function handleDocumentCaptureDrop(event) {
+  if (!event?.dataTransfer) return;
+
+  const data = parseDropData(event);
+  if (!isMarkedSheetDrop(data)) return;
+
+  const resolved = resolveActorSheetFromDropEvent(event);
+  if (!resolved?.actor) return;
+
+  const routed = routeMarkedSheetDrop(resolved.actor, data);
+  if (!routed) return;
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  await routed;
+}
+
 /**
  * Register the dropActorSheetData hook to intercept egress drops on Actor
  * sheets. Called once at module ready.
@@ -262,8 +396,22 @@ function onItemRowDragEnd(event) {
  * default drop handling (which would try to create the item directly
  * without going through our pipeline, leaving the source still in the
  * vault).
+ *
+ * A capture-phase document listener handles the same marked drops for
+ * sheet implementations that never call `dropActorSheetData`.
  */
 export function registerEgressInterceptor() {
+  if (!captureInterceptorRegistered) {
+    const doc = globalThis.document;
+    if (typeof doc?.addEventListener === "function") {
+      doc.addEventListener("drop", handleDocumentCaptureDrop, true);
+      captureInterceptorRegistered = true;
+    }
+  }
+
+  if (hookInterceptorRegistered) return;
+  hookInterceptorRegistered = true;
+
   Hooks.on("dropActorSheetData", (destActor, sheet, data) => {
     console.debug(
       `${MODULE_TITLE} | dropActorSheetData fired`,
@@ -275,26 +423,18 @@ export function registerEgressInterceptor() {
       }
     );
 
-    // Handle private Loot Prep drags directly to Actor sheets.
-    if (data?.[QM_LOOTPREP_DRAG_MARKER]) {
-      handleLootPrepToSheetDrop(destActor, data).catch((err) => {
-        console.error(`${MODULE_TITLE} | Loot prep to sheet drop failed`, err);
-        ui.notifications.error(`${MODULE_TITLE}: failed to transfer item. Check the console.`);
-      });
-      return false;
-    }
+    if (!isMarkedSheetDrop(data)) return;
 
-    if (!data?.[QM_EGRESS_MARKER]) return; // not ours; let default handle
-
-    handleEgressDrop(destActor, data).catch((err) => {
-      console.error(`${MODULE_TITLE} | Egress drop handler failed`, err);
-      ui.notifications.error(
-        `${MODULE_TITLE}: failed to transfer item. Check the console.`
-      );
-    });
+    if (!routeMarkedSheetDrop(destActor, data)) return false;
 
     return false; // stop default drop handling
   });
+}
+
+/** @internal Headless test helper — resets one-time egress registration flags. */
+export function resetEgressInterceptorForTests() {
+  captureInterceptorRegistered = false;
+  hookInterceptorRegistered = false;
 }
 
 async function handleEgressDrop(destActor, data) {
@@ -394,7 +534,7 @@ async function submitIngressRequest({ sourceItem, destActor }) {
   }
   const requestId = `qm-${foundry.utils.randomID()}`;
 
-  const result = await submitRequest({
+  const result = await getSubmitRequest()({
     type: PAYLOAD_TYPES.ITEM_TRANSFER,
     requestId,
     timestamp: Date.now(),
@@ -416,7 +556,7 @@ async function submitEgressRequest({ sourceItem, destActor }) {
   }
   const requestId = `qm-${foundry.utils.randomID()}`;
 
-  const result = await submitRequest({
+  const result = await getSubmitRequest()({
     type: PAYLOAD_TYPES.ITEM_TRANSFER,
     requestId,
     timestamp: Date.now(),
@@ -440,6 +580,18 @@ function buildTransferPayload(sourceItem, destActor) {
     destActorId: destActor.id,
     destActorName: destActor.name
   };
+}
+
+/** @internal Headless test hook for intercepting authenticated submit calls. */
+let submitRequestOverride = null;
+
+function getSubmitRequest() {
+  return submitRequestOverride ?? submitRequest;
+}
+
+/** @internal Headless test hook for intercepting authenticated submit calls. */
+export function bindSubmitRequestForTests(override = null) {
+  submitRequestOverride = override;
 }
 
 function preflightClientTransfer(action, sourceItem, destActor) {

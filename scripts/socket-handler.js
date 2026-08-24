@@ -32,6 +32,7 @@ import {
   authorizeTransfer,
   resolveTransferDocuments
 } from "./transfer-authorization.js";
+import { consumeMutationSlot } from "./mutation-rate-limit.js";
 
 const QUERY_NAME = "quartermaster.processRequest";
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -179,6 +180,17 @@ async function dispatchPayload(payload, senderUserId) {
   const sender = game.users.get(senderUserId);
   if (!sender) {
     return { status: "failed", error: "unknown-sender" };
+  }
+
+  const isMutationType =
+    payload.type === PAYLOAD_TYPES.ITEM_TRANSFER ||
+    payload.type === PAYLOAD_TYPES.CURRENCY_CHANGE ||
+    payload.type === PAYLOAD_TYPES.CUSTOM_RESOURCE_CHANGE;
+  if (isMutationType) {
+    const limit = consumeMutationSlot(senderUserId);
+    if (!limit.allowed) {
+      return { status: "failed", ok: false, error: limit.error ?? "rate-limited" };
+    }
   }
 
   switch (payload.type) {

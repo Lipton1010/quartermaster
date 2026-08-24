@@ -49,6 +49,14 @@
         "name": "Resend Cooldown (seconds)",
         "hint": "How long a player must wait before re-sending an approval request to the GM."
       },
+      "mutationRateLimitMax": {
+        "name": "Mutation Rate Limit (per window)",
+        "hint": "Maximum authenticated item, currency, and resource mutations a single user may submit in the rate-limit window. 0 disables the limiter."
+      },
+      "mutationRateLimitWindowMs": {
+        "name": "Mutation Rate Limit Window (ms)",
+        "hint": "Sliding window, in milliseconds, used with the per-user mutation rate limit. Invalid values fall back to 10 seconds."
+      },
       "unidentifiedDisplay": {
         "name": "Unidentified Item Display",
         "hint": "How unidentified items appear when the active game system exposes identification data."

@@ -34,4 +34,6 @@ test("D&D retains its identification and price settings", () => {
 
   assert.equal(settings.get(SETTINGS.UNIDENTIFIED_DISPLAY)?.config, true);
   assert.equal(settings.get(SETTINGS.HIDE_PRICES_FROM_PLAYERS)?.config, true);
+  assert.equal(settings.get(SETTINGS.MUTATION_RATE_LIMIT_MAX)?.default, 30);
+  assert.equal(settings.get(SETTINGS.MUTATION_RATE_LIMIT_WINDOW_MS)?.default, 10000);
 });

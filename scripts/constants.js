@@ -67,6 +67,8 @@ export const SETTINGS = {
   // Coordinator (step 3)
   REQUEST_AGE_MAX_SECONDS: "requestAgeMaxSeconds",
   RECENT_REQUEST_CACHE_SIZE: "recentRequestCacheSize",
+  MUTATION_RATE_LIMIT_MAX: "mutationRateLimitMax",
+  MUTATION_RATE_LIMIT_WINDOW_MS: "mutationRateLimitWindowMs",
   // UI rendering (step 6)
   UI_REFRESH_DEBOUNCE_MS: "uiRefreshDebounceMs",
   // Transaction log defaults (client-scope, step 17)

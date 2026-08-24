@@ -307,6 +307,26 @@ export function registerSettings(adapter = getActiveSystemAdapter()) {
     range: { min: 100, max: 50000, step: 100 }
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.MUTATION_RATE_LIMIT_MAX, {
+    name: "quartermaster.settings.mutationRateLimitMax.name",
+    hint: "quartermaster.settings.mutationRateLimitMax.hint",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 30,
+    range: { min: 0, max: 200, step: 1 }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.MUTATION_RATE_LIMIT_WINDOW_MS, {
+    name: "quartermaster.settings.mutationRateLimitWindowMs.name",
+    hint: "quartermaster.settings.mutationRateLimitWindowMs.hint",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 10000,
+    range: { min: 1000, max: 120000, step: 1000 }
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.UI_REFRESH_DEBOUNCE_MS, {
     name: "quartermaster.settings.uiRefreshDebounceMs.name",
     hint: "quartermaster.settings.uiRefreshDebounceMs.hint",
