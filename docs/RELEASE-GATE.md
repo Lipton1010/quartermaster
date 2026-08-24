@@ -6,7 +6,22 @@ Quartermaster 1.0.0 is a release candidate. This gate is **closed** until every 
 
 **Not approved for release.** The gate remains **closed** as of 2026-08-24. **Merge to `main` is not authorized.**
 
-**Committed candidate:** `b03a73b` on `feat/system-agnostic` (gate-doc, changelog, and package-evidence reconciliation after dual-audit P2 remediations).
+**Committed candidate:** `b03a73b` on `feat/system-agnostic` (gate-doc, changelog, and package-evidence reconciliation after dual-audit P2 remediations). **Current HEAD:** `8b3d018` (docs-only follow-up on the same branch; no product-code delta vs `b03a73b`; package zip still built from `b03a73b`, SHA-256 `c443f2db…`).
+
+**Opus + Fable + Codex audit reconciliation (2026-08-24, this session, HEAD `8b3d018`).** Live verification prioritized over redesign. **Merge to `main` is not authorized.**
+
+| Finding | Source | This-session live result |
+| --- | --- | --- |
+| v13 `userQuery` arg0 spoof (P1-1) | Fable | **Not P0 — fail-closed.** Isolated v13.351 D&D 5e port **30011**, single GM Chrome. Player2 emitted raw `game.socket.emit("userQuery", "<GM-id>", …, "quartermaster.processRequest", staged ITEM_TRANSFER)`. GM capture received arg0 rewritten to Player2 (`mm7Ha6oMBntaVbE8`), not spoofed GM id. Ack `{ status: "failed", error: "invalid-transfer-boundary" }`; staging unchanged; zero vault mutation. Foundry server session rewrite confirmed live. |
+| PF2e canvas-token marked drop | Opus | **v13 PF2e 7.12.2 (30012):** marked native **sheet** egress control **Passed** (`handleDocumentCaptureDrop`, `preventDefault:1`, vault emptied, one copy on unlinked token actor). **Canvas-token drop not live-passed:** v13 has no `TokenDocument.dropCanvasData` / `canvas.dropCanvasData`; `#board` drag dispatch was a no-op (no mutation, no duplicate). Opus `dropCanvasData` → `sheet._onDrop` bypass concern **not exercised on v13**; **v14 PF2e cell was not up** this session — do not claim v14 canvas-token pass. Prior matrix token UUID evidence used sheet capture path, not live canvas drag. |
+| Staging privacy (devtools-readable actors) | Codex / product | **Deferred — Paul product decision.** No architecture change this session. |
+| Two-tab same-GM duplication | Prior audits | **Operator constraint only** (one GM client for v13 query ack); no AsyncLock redesign. |
+| Package vs HEAD drift | Opus / gate | Clean package remains `c443f2db2f4e5c73ee1e2235d1180e035591562fc85a27862bd1dbc222878413` from `b03a73b`. HEAD `8b3d018` is docs-only; no rebuild required unless product code changes. |
+| `.cursor/` package block | Hygiene | **Fixed:** `.cursor/` added to `.gitignore` (never track). |
+
+Disposable CDP scripts (not committed): `test-data\v13-351-dnd5e\v13-p1-identity-spoof-probe.mjs`; `test-data\v13-351-pf2e\v13-pf2e-canvas-drop3.mjs` (+ diagnostics `…drop4.mjs`).
+
+**Paul decisions still required before release:** (1) explicit merge/tag/publication authorization; (2) staging-privacy architecture (application-layer-only vs deeper Foundry isolation); (3) whether v14 PF2e canvas-token drop must be live-verified before gate approval given v13 canvas API absence; (4) operator policy for single-GM-client constraint on v13.
 
 **Dual-audit (Grok + Kimi, 2026-08-24, final pass):** no P0 findings; no demonstrated P1 code hole on the committed candidate. P2 remediations completed this session: CHANGELOG accuracy, BUILD-REPORT recency, and package-evidence reconciliation (`c443f2db…`). Accepted/deferred P2s (not release blockers): in-memory mutation rate limit not persisted across reload; extra-GM `CONFIG.queries` ack race when multiple GM clients are connected; query-sender LIFO stack ordering; player privacy enforced at the application layer only; CSB first-boot `quartermaster.vaultActorType=character` operator note.
 
