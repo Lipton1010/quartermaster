@@ -23,6 +23,9 @@ _(Merge, installation, tagging, and publication remain gated on review of the mi
 - Add a GM-only staging Actor for unrevealed Items, staged currency, folders, notes, canonical logs, and recovery records.
 - Add restartable storage-schema migration and automated adapter, authorization, privacy, migration, manifest, and package-integrity checks.
 - Add a single adapter-aware development test runner and repaired GitHub Actions workflows.
+- Add a capture-phase document `drop` interceptor in `scripts/drag-drop.js` for Quartermaster-marked egress drags, resolving destination Actors via `foundry.applications.instances` and legacy `ui.windows` (required for PF2e `CharacterSheetPF2e` on ApplicationV1).
+- Add a per-user sliding-window mutation rate limiter (`scripts/mutation-rate-limit.js`) with world settings for max requests and window duration.
+- Add `scripts/query-sender.js` to resolve authenticated `CONFIG.queries` sender identity on Foundry v13 from the server-rewritten `userQuery` socket argument.
 
 ### Changed
 - Use Actor and Item UUIDs for transfers, including unlinked Token Actors, while accepting permission-checked legacy IDs during v1.
@@ -35,13 +38,19 @@ _(Merge, installation, tagging, and publication remain gated on review of the mi
 - Remove D&D 5e's native-currency whole-coin restriction (`Number.isInteger(delta)` check, added earlier in this same branch and never shipped) to preserve v0.1.8's decimal-currency compatibility. D&D 5e's currency fields genuinely support fractional values; only PF2e's coin APIs actually require whole units, and that requirement is now expressed per-currency via the adapter-declared `wholeUnitsOnly` flag (see Fixed, below) instead of being hardcoded into the D&D adapter.
 
 ### Known limitations
-- PF2e native coin Bulk is separated from the Actor inventory aggregate to avoid double-counting optional currency load. Coin Items inside Bulk-reducing containers can make that separation approximate. PF2e capacity enforcement remains disabled, and this case remains pending in the live matrix.
+- PF2e native coin Bulk is separated from the Actor inventory aggregate to avoid double-counting optional currency load. Coin Items inside Bulk-reducing containers can make that separation approximate. PF2e capacity enforcement remains disabled.
+- Mutation rate limiting is in-memory only and does not persist across server reload.
+- Foundry v13 `CONFIG.queries` ack routing can race when multiple Gamemaster clients are connected; live Player2 checks require a single GM client.
+- Query-sender identity capture uses LIFO stack ordering when multiple queries overlap.
+- Player privacy for canonical logs and staging data is enforced at the application layer; Foundry still syncs full Actor/flag data to connected clients.
+- Custom System Builder first boot on the generic adapter may require setting `quartermaster.vaultActorType=character` when no headed DialogV2 is available (operator note, not a product defect).
 
 ### Security
 - Remove the unauthenticated raw-socket mutation fallback and fail closed without Foundry's authenticated query transport.
 - Revalidate sender identity, document ownership, transfer direction, system compatibility, and storage boundaries under GM authority.
 - Create and verify destination Items before deleting sources, compensate failed operations, and retain private recovery data when needed.
 - Redact player-readable transaction projections while retaining the canonical audit log in GM-only storage.
+- On Foundry v13, resolve query sender identity from the server-authenticated `userQuery` connection context only; never trust `payload.userId` or bare `options.userId` (fail closed to `null` when identity cannot be established).
 
 ### Migration
 - Introduce integer storage schema version 1 and currency-config version 3.
@@ -63,15 +72,14 @@ _(Merge, installation, tagging, and publication remain gated on review of the mi
 - Key GM-only inventory and Loot Prep controls off the active storage-GM election instead of raw `user.isGM`, so a non-active GM no longer sees clickable no-op controls.
 - Normalize primitive-only array fields (e.g. a system's Set-backed Item property list) to deduplicated, order-independent content before the migration's per-Item write-verification check, found via live rehearsal against Foundry 14.365/D&D 5e 5.3.3: recreating an Item during migration could benignly round-trip a duplicate entry in such a field, which the exact-array-equality check wrongly treated as corrupted data and aborted the migration on.
 - Filter `undefined`-valued object keys (and convert `undefined` array elements to `null`) before every write-then-verify comparison against a Foundry actor flag, matching real JSON/Foundry persistence semantics. Found via live matrix testing against Pathfinder 2e and Custom System Builder: a raw Item snapshot with even one schema-defined-but-unset field (always true for PF2e's native Treasure/coin Items and every Custom System Builder Item) made every transfer involving that Item fail with `canonical-transaction-log-verification-failed`, since Foundry silently drops such keys on persist but the comparison never accounted for that. Fixed everywhere this write-verification pattern is duplicated: transaction log, storage migration, recovery records, operation coordinator, operation tombstones, and loot-prep folders/notes.
-
-### Known limitations (added)
-- Custom System Builder: dragging an Item from Quartermaster's inventory popup directly onto a Custom System Builder Actor's native sheet creates an unaudited duplicate Item with no transaction-log entry, because that system's Actor sheet overrides Foundry's drop handling without ever calling `Hooks.call("dropActorSheetData", ...)`. Ingress and egress performed through Quartermaster's own popup UI are unaffected. Root cause identified precisely; no fix shipped pending dedicated test coverage for `scripts/drag-drop.js`.
+- Close the Custom System Builder native-sheet egress bypass: a capture-phase document listener gated on Quartermaster drag markers intercepts marked drops before system sheets that override `_onDrop` without calling `dropActorSheetData`, including CSB `CharacterSheetV2` and PF2e `CharacterSheetPF2e` registered only in `ui.windows`.
 
 ### Verification
-- On 2026-08-10, the final candidate (`c640109499e5c8b173c85ff47194d5c294f31304`) passed syntax checks for 80 JavaScript files, all 90/90 headless tests, and the release/system-boundary validator. Its validated package contained 67 clean entries (SHA-256 `d4a46622b7750a8bfad031fc3a01cf9e12c162fde98379f07cdfa6bbae78b299`) and emitted a manifest, checksum file, and complete file list. This checksum differs from the package actually exercised in most of the live testing below (`797531b8...`, built from commit `7d9b55f`) only because a doc-only commit and this changelog's own commit (`CHANGELOG.md` ships inside the package; `docs/` does not) landed afterward and shifted the git-archive-embedded commit timestamp; no `scripts/`, `templates/`, or `styles/` file differs between the two.
-- Three of six required live Foundry matrix cells now have evidence: 14.365/D&D 5e 5.3.3 **passed** in full (including post-restart client reconnection), 14.365/Pathfinder 2e 8.4.0 **passed** in full against the fixed candidate, and 14.365/Custom System Builder 6.0.2 **passed its Item-transfer checks** against the fixed candidate with one distinct, still-open defect (see Known limitations above). See [RELEASE-GATE.md](docs/RELEASE-GATE.md) for exactly which candidate each cell's evidence was gathered against. The three Foundry 13.351 cells remain unprovisioned — Foundry 13.351 is not installed locally and obtaining it requires the maintainer's own Foundry account.
-- The live v0.1.8-to-v1 migration rehearsal **passed** against a synthetic fixture world after the two fixes above landed; an earlier rehearsal against the pre-fix candidate failed and is kept in the record. See the [release gate](docs/RELEASE-GATE.md) and [migration report](docs/MIGRATION-REPORT.md) for full evidence.
-- Version 1.0.0 remains unreleased. Merge, installation, tagging, and publication have not been authorized.
+- On 2026-08-24, committed candidate on `feat/system-agnostic` passed syntax checks, **117/117** headless tests (`npm test`), and the release/system-boundary validator. Coverage includes `query-sender`, `drag-drop` capture interceptor, and `mutation-rate-limit` unit tests.
+- Validated release package built from the committed tree via `npm run package` + `tools/validate-package.mjs`. Evidence (archive, SHA-256, manifest copy, complete file list) is retained beside the archive under `artifacts/system-agnostic/`; see [RELEASE-GATE.md](docs/RELEASE-GATE.md) for the current checksum.
+- All six required live Foundry matrix cells **Passed** on interceptor SHA-256 `51E7246FE2CB008F9FC443B577CE665B2C81866DFEF31BD16B83CAE0A154FDCD` (2026-08-24): Foundry **v14.367** (D&D 5e 5.3.3, PF2e 8.4.0, CSB 6.0.2) and Foundry **v13.351** (D&D 5e 5.3.3, PF2e 7.12.2, CSB 5.2.1). Not every sub-check was re-run on this interceptor in the final session; carried-forward evidence is annotated in [RELEASE-GATE.md](docs/RELEASE-GATE.md).
+- The live v0.1.8-to-v1 migration rehearsal **passed** against a synthetic fixture world. See the [release gate](docs/RELEASE-GATE.md) and [migration report](docs/MIGRATION-REPORT.md) for full evidence.
+- Version 1.0.0 remains **unreleased**. Merge, installation, tagging, and publication have **not** been authorized.
 
 
 ## [0.1.8] - 2026-07-22

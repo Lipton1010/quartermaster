@@ -6,22 +6,24 @@ Quartermaster 1.0.0 is a release candidate. This gate is **closed** until every 
 
 **Not approved for release.** The gate remains **closed** as of 2026-08-24. **Merge to `main` is not authorized.**
 
-**Committed candidate:** security and P2 remediations landed at `47347b1` on `feat/system-agnostic`; this gate doc records the completed live matrix on that commit plus gate-doc reconciliation commits.
+**Committed candidate:** `bac3eef` on `feat/system-agnostic` (gate-doc and changelog reconciliation after the six-cell live matrix and package rebuild).
 
-**Dual-audit (Grok + Kimi, 2026-08-24):** no P0 findings; no demonstrated P1 code hole on `47347b1`. Accepted/deferred P2s: in-memory GM rate-limit not persisted across reload; wrap/single-GM ack race documented; query-sender LIFO stack ordering recorded; CSB first-boot `quartermaster.vaultActorType=character` operator note (P2, not P0).
+**Dual-audit (Grok + Kimi, 2026-08-24, final pass):** no P0 findings; no demonstrated P1 code hole on the committed candidate. P2 remediations in progress this session: CHANGELOG accuracy, BUILD-REPORT recency, and package-evidence reconciliation. Accepted/deferred P2s (not release blockers): in-memory mutation rate limit not persisted across reload; extra-GM `CONFIG.queries` ack race when multiple GM clients are connected; query-sender LIFO stack ordering; player privacy enforced at the application layer only; CSB first-boot `quartermaster.vaultActorType=character` operator note.
 
 **Six-cell live matrix (2026-08-24):** all **Passed** on capture-phase interceptor SHA-256 `51E7246FE2CB008F9FC443B577CE665B2C81866DFEF31BD16B83CAE0A154FDCD` — Foundry **v14.367** (D&D 5e 5.3.3, PF2e 8.4.0, CSB 6.0.2) and Foundry **v13.351** (D&D 5e 5.3.3, PF2e 7.12.2, CSB 5.2.1). Prior `B3B9DD8C…` CSB native-sheet evidence is superseded; do not promote it as current proof.
 
-**Remaining blockers:** (1) final dual-audit sign-off; (2) explicit Paul authorization before merge, tag, or publication. Prior stale archive SHA-256 `ac909126…` (predated `47347b1`, lacked `query-sender.js`) superseded by rebuild below.
+**Remaining blockers:** (1) explicit Paul authorization before merge, tag, or publication. Prior stale archive SHA-256 values `ac909126…` and `d75bbad0…` (predated final changelog reconciliation) are superseded by the rebuild recorded below once this P2 session completes.
+
+**Live matrix evidence scope (P2-5):** all six cells are **Passed** on interceptor `51E7246F…`, but **not every minimum-matrix sub-check was re-run on that interceptor in the final session**. Cells marked "Prior … stands" or "carried forward" in the matrix table and evidence sections below rely on earlier isolated sessions against the same interceptor tree or on pre-interceptor checks that were not contradicted. Sub-checks explicitly re-run on `51E7246F…` in the final session include: capture-phase native-sheet egress (CSB v14, PF2e v14/v13), v13 query-sender identity / Player2 fail-closed, mutation rate-limit spot-checks, process-restart persistence (v14 D&D, v13 D&D/PF2e/CSB), and v13 PF2e/CSB remaining minimum-matrix items documented in the follow-up sections.
 
 ## Gate summary
 
 | Gate | Status | Evidence and next action |
 | --- | --- | --- |
 | Version and system-agnostic manifest | Passed on committed candidate | `module.json` reports version `1.0.0`, no system relationship, and a version-specific download URL. |
-| Headless automated suite | **Passed** on `47347b1` (2026-08-24) | `npm test` reported **117/117** on committed HEAD including `query-sender`, `drag-drop`, and `mutation-rate-limit` unit tests. |
-| Final automated rerun | **Passed** (2026-08-24) | Complete suite rerun at `47347b1` before gate-doc reconciliation commit. |
-| Clean release package | **Passed** (2026-08-24) | `artifacts/system-agnostic/module.zip` rebuilt from `9fcd0c0` via `npm run package` + `tools/validate-package.mjs`: **69** clean entries, SHA-256 `d75bbad032ba8044b9d81110a84412ef35ec9642c1c62a5a5767ccfd0a490f81` (supersedes stale `ac909126…`). Includes `query-sender.js`, capture-phase interceptor (`drag-drop.js`), and `mutation-rate-limit.js`. Evidence: `artifacts/system-agnostic/module.zip.sha256`, `module.zip.contents.txt`. |
+| Headless automated suite | **Passed** (2026-08-24) | `npm test` reported **117/117** on committed HEAD including `query-sender`, `drag-drop`, and `mutation-rate-limit` unit tests. |
+| Final automated rerun | **Passed** (2026-08-24) | Complete suite rerun before gate-doc/changelog reconciliation commit. |
+| Clean release package | **Passed** (2026-08-24, P2 rebuild) | `artifacts/system-agnostic/module.zip` rebuilt from committed HEAD via `npm run package` + `tools/validate-package.mjs`. Current SHA-256 recorded in `module.zip.sha256` beside the archive (supersedes stale `ac909126…` and prior `d75bbad0…`). Includes `query-sender.js`, capture-phase interceptor (`drag-drop.js`), and `mutation-rate-limit.js`; no `.cursor` entries. Evidence: `artifacts/system-agnostic/module.zip.sha256`, `module.zip.contents.txt`, `BUILD-REPORT.md`. |
 | Live Foundry compatibility matrix | **Passed** (six cells, interceptor `51E7246F…`) | v14.367: D&D 5e 5.3.3, PF2e 8.4.0, CSB 6.0.2 — full minimum matrix. v13.351: D&D 5e 5.3.3 (Player2/restart/rate-limit), PF2e **7.12.2**, CSB **5.2.1** (incl. token UUID, hostile, hide/reveal, reload, generic CUR) — full minimum matrix (2026-08-24). CSB native-sheet egress gap closed; do not cite stale `B3B9DD8C…` as current CSB proof. |
 | Live v0.1.8-to-v1 migration rehearsal | **Passed** | Synthetic v0.1.8 fixture world upgraded against the fixed candidate; see [MIGRATION-REPORT.md](MIGRATION-REPORT.md). |
 | Documentation review | In progress | Gate doc reconciled 2026-08-24; final release date only after approval. |
