@@ -49,6 +49,7 @@ const required = [
 ];
 const forbidden = [
   /(^|\/)\.git(?:\/|$)/,
+  /(^|\/)\.cursor(?:\/|$)/,
   /(^|\/)node_modules(?:\/|$)/,
   /(^|\/)(?:tests|tools|docs|test-data|artifacts|github|\.github)(?:\/|$)/,
   /(^|\/)package(?:-lock)?\.json$/,

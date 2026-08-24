@@ -33,6 +33,11 @@ import {
   resolveTransferDocuments
 } from "./transfer-authorization.js";
 import { consumeMutationSlot } from "./mutation-rate-limit.js";
+import {
+  installQuerySenderCapture,
+  resolveAuthenticatedQuerySender,
+  takeSocketQuerySender
+} from "./query-sender.js";
 
 const QUERY_NAME = "quartermaster.processRequest";
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -76,15 +81,14 @@ function registerQueryHandler() {
     return;
   }
   CONFIG.queries[QUERY_NAME] = async (data, options = {}) => {
+    const socketSenderId = takeSocketQuerySender();
     if (!isActiveGM()) {
       return { status: "failed", error: "not-active-gm" };
     }
-    // Never infer a sender on the receiving GM. Without the query framework's
-    // authenticated identity, every mutation must fail closed.
-    // Foundry v14 supplies the authenticated User document as `options.user`;
-    // older v13 builds may supply an authoritative `userId` instead.
+    // Never infer a sender from the payload. v14 supplies `options.user`;
+    // v13.351 omits it and must use the server-authenticated `userQuery` id.
     const authenticatedUser = options.user ?? null;
-    const senderUserId = authenticatedUser?.id ?? options.userId;
+    const senderUserId = resolveAuthenticatedQuerySender(options, socketSenderId);
     if (typeof senderUserId !== "string" || !senderUserId) {
       return { status: "failed", error: "unauthenticated-query" };
     }
@@ -94,6 +98,7 @@ function registerQueryHandler() {
     }
     return await dispatchPayload(data, senderUserId);
   };
+  installQuerySenderCapture(QUERY_NAME);
   _queryRegistered = true;
 }
 

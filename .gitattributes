@@ -1,3 +1,5 @@
+.cursor export-ignore
+.cursor/** export-ignore
 .github export-ignore
 github export-ignore
 tests export-ignore
