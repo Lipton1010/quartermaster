@@ -40,9 +40,10 @@ _(Merge, installation, tagging, and publication remain gated on review of the mi
 ### Known limitations
 - PF2e native coin Bulk is separated from the Actor inventory aggregate to avoid double-counting optional currency load. Coin Items inside Bulk-reducing containers can make that separation approximate. PF2e capacity enforcement remains disabled.
 - Mutation rate limiting is in-memory only and does not persist across server reload.
-- Foundry v13 `CONFIG.queries` ack routing can race when multiple Gamemaster clients are connected; live Player2 checks require a single GM client.
+- Foundry v13 `CONFIG.queries` ack routing can race when multiple Gamemaster clients are connected. Accepted as an operator constraint for 1.0.0: one Gamemaster client per world.
+- PF2e canvas-token drop is not a supported Quartermaster egress path. Give items by dropping on the open character sheet or using Add to Actor.
 - Query-sender identity capture uses LIFO stack ordering when multiple queries overlap.
-- Player privacy for canonical logs and staging data is enforced at the application layer; Foundry still syncs full Actor/flag data to connected clients.
+- Player privacy for canonical logs and staging data is enforced at the application layer (UI-only); Foundry still syncs full Actor/flag data to connected clients. Accepted for 1.0.0.
 - Custom System Builder first boot on the generic adapter may require setting `quartermaster.vaultActorType=character` when no headed DialogV2 is available (operator note, not a product defect).
 
 ### Security
