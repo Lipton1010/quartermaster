@@ -202,7 +202,7 @@ export const pf2eAdapter = Object.freeze({
 
     const current = finiteNonNegative(readPf2eCurrency(actor, currencyId), 0);
     const next = current + delta;
-    if (next < 0) return { ok: false, error: "insufficient-funds" };
+    if (!Number.isFinite(next) || next < 0) return { ok: false, error: "insufficient-funds" };
 
     try {
       if (delta > 0) {
@@ -254,6 +254,16 @@ export const pf2eAdapter = Object.freeze({
       };
     }
 
+    const observed = readPf2eCurrency(actor, currencyId);
+    if (observed !== next) {
+      return {
+        ok: false,
+        error: observed === current ? "currency-update-not-applied" : "currency-reconciliation-required",
+        previousValue: current,
+        expectedValue: next,
+        observedValue: observed
+      };
+    }
     return { ok: true, previousValue: current, newValue: next };
   },
 

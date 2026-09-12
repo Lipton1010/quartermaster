@@ -272,6 +272,7 @@ function isSafelyRetryableRevealFailure(result) {
     "invalid-delta",
     "whole-coins-required",
     "insufficient-funds",
+    "currency-update-not-applied",
     "not-found",
     "staged-entry-changed",
     "claim-log-unavailable",
@@ -326,7 +327,23 @@ async function performCurrencyReveal({
   if (!claim) return { status: "failed", error: "claim-log-unavailable", requestId };
 
   const applied = await safeApplyCurrencyDelta(currency.id, entry.amount, backing);
-  if (applied.status !== "success") return applied;
+  if (applied.status !== "success") {
+    if (applied.error === "currency-reconciliation-required") {
+      try {
+        await writeRecoveryRecord({
+          ...applied,
+          requestId,
+          type: "currency.reveal.partial-write",
+          status: "needs-reconciliation",
+          stagedEntries: [entry]
+        });
+      } catch (error) {
+        // The durable request and retained staged entry still block a retry.
+        console.error(`${MODULE_TITLE} | partial currency write recovery log failed`, error);
+      }
+    }
+    return applied;
+  }
   const finalized = await finalizeCurrencyReveal({
     requestId,
     entries: [entry],

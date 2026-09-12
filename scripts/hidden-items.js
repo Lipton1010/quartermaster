@@ -7,6 +7,7 @@ import { writeRecoveryRecord } from "./recovery-records.js";
 import {
   isActiveStorageGM,
   requireActiveStorageGM,
+  withItemMutationLock,
   withStorageLedgerLock
 } from "./storage-ledger.js";
 
@@ -52,7 +53,7 @@ export async function setItemHidden(itemId, hidden) {
 
   let outcome;
   try {
-    outcome = await withStorageLedgerLock(async () => {
+    outcome = await withItemMutationLock(() => withStorageLedgerLock(async () => {
       requireActiveStorageGM();
       // Resolve inside the critical section. Two rapid clicks must observe the
       // first completed move instead of both creating a destination copy.
@@ -77,7 +78,7 @@ export async function setItemHidden(itemId, hidden) {
       }
       if (!inStaging) return { item: null, recoveryRecord: null };
       return moveStorageItemUnlocked(inStaging, backing, { hidden: false, operation: "reveal" });
-    });
+    }));
   } catch (error) {
     console.error(`${MODULE_TITLE} | setItemHidden failed`, error);
     return null;
@@ -131,7 +132,7 @@ export async function revealItems(itemIds, opts = {}) {
 export async function deleteHiddenItem(itemId) {
   if (!isActiveStorageGM()) return { status: "failed", error: "active-gm-only" };
   try {
-    const deleted = await withStorageLedgerLock(async () => {
+    const deleted = await withItemMutationLock(() => withStorageLedgerLock(async () => {
       requireActiveStorageGM();
       const item = findHiddenItem(itemId);
       if (!item) return { status: "failed", itemId, error: "item-not-found" };
@@ -155,7 +156,7 @@ export async function deleteHiddenItem(itemId) {
         }
       }
       return { status: "success", itemId, itemName, deleteWarning };
-    });
+    }));
     if (deleted.status !== "success") return deleted;
     await writeEntry({
       type: "hidden.deleted",
@@ -193,8 +194,15 @@ export async function stageHiddenItem(sanitizedData) {
   try {
     const created = await withStorageLedgerLock(async () => {
       requireActiveStorageGM();
-      const [item] = await staging.createEmbeddedDocuments("Item", [data], { keepId: true });
-      return item ?? null;
+      try {
+        const [item] = await staging.createEmbeddedDocuments("Item", [data], { keepId: true });
+        return item ?? staging.items.get(data._id) ?? null;
+      } catch (error) {
+        const item = staging.items.get(data._id);
+        if (!item) throw error;
+        console.warn(`${MODULE_TITLE} | staging create reported an error after committing`, error);
+        return item;
+      }
     });
     if (!created) return { status: "failed", error: "create-returned-empty" };
     await writeEntry({
@@ -239,7 +247,14 @@ async function moveStorageItemUnlocked(sourceItem, destinationActor, { hidden, o
   let created = null;
   try {
     requireActiveStorageGM();
-    [created] = await destinationActor.createEmbeddedDocuments("Item", [data], { keepId: true });
+    try {
+      [created] = await destinationActor.createEmbeddedDocuments("Item", [data], { keepId: true });
+    } catch (error) {
+      created = destinationActor.items?.get?.(data._id) ?? null;
+      if (!created) throw error;
+      console.warn(`${MODULE_TITLE} | ${operation} create reported an error after committing`, error);
+    }
+    created ??= destinationActor.items?.get?.(data._id) ?? null;
     if (!created) throw new Error("create-returned-empty");
     try {
       requireActiveStorageGM();

@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(Merge, installation, tagging, and publication remain gated on review of the migration and compatibility evidence.)_
 
+### Fixed
+- Serialize Item transfers with GM hide, reveal, and delete operations to prevent duplicate copies during concurrent actions.
+- Verify native and custom currency balances after every write. Cancelled reveals retain their staged funds; partial writes retain recovery information and block unsafe retries.
+- Recover Item creation that commits before reporting an error, including compensation and recovery records when source deletion fails.
+- Preserve successful currency and resource changes when commit logging fails, and retain their results for safe request replay.
+
 
 ## [1.0.0] - Unreleased
 

@@ -34,7 +34,10 @@ function createActor({ system = {}, flag = null, inventory = null } = {}) {
     inventory,
     getFlag() { return flag; },
     async setFlag(moduleId, key, value) { writes.push({ moduleId, key, value }); flag = value; },
-    async update(change) { updates.push(change); }
+    async update(change) {
+      updates.push(change);
+      this.system.currency.gp = change["system.currency.gp"];
+    }
   };
   return { actor, writes, updates };
 }
@@ -75,8 +78,8 @@ test("PF2e currency facade uses exact-denomination inventory APIs", async () => 
   const { actor } = createActor({
     inventory: {
       coins: { pp: 1, gp: 7, sp: 3, cp: 2 },
-      async addCoins(coins, options) { calls.push(["add", coins, options]); },
-      async removeCoins(coins, options) { calls.push(["remove", coins, options]); return true; }
+      async addCoins(coins, options) { calls.push(["add", coins, options]); this.coins.gp += coins.gp; },
+      async removeCoins(coins, options) { calls.push(["remove", coins, options]); this.coins.gp -= coins.gp; return true; }
     }
   });
 

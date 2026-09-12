@@ -21,7 +21,7 @@
 import { MODULE_ID, MODULE_TITLE, FLAGS } from "./constants.js";
 import { getBackingActor } from "./backing-actor.js";
 import { setItemHidden } from "./hidden-items.js";
-import { isActiveStorageGM, requireActiveStorageGM } from "./storage-ledger.js";
+import { isActiveStorageGM, requireActiveStorageGM, withItemMutationLock } from "./storage-ledger.js";
 import { writeEntry } from "./transaction-log.js";
 import { transferInventoryItemToActor } from "./drag-drop.js";
 import { getActiveSystemAdapter } from "./system-adapters/registry.js";
@@ -375,8 +375,12 @@ async function handleDeleteItem(itemId, itemName, app) {
   if (!confirmed) return;
 
   try {
-    requireActiveStorageGM();
-    await actor.deleteEmbeddedDocuments("Item", [itemId]);
+    await withItemMutationLock(async () => {
+      requireActiveStorageGM();
+      if (!actor.items.get(itemId)) throw new Error("item-no-longer-in-vault");
+      await actor.deleteEmbeddedDocuments("Item", [itemId]);
+      if (actor.items.get(itemId)) throw new Error("delete-did-not-remove-item");
+    });
 
     await writeEntry({
       type: "hidden.deleted",

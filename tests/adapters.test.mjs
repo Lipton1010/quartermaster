@@ -66,7 +66,10 @@ test("D&D 5e adapter retains v0.1.8 quantity, weight, price, and currency behavi
   const actor = {
     system: { currency: { gp: 12 } },
     items: [item],
-    async update(change) { updates.push(change); }
+    async update(change) {
+      updates.push(change);
+      this.system.currency.gp = change["system.currency.gp"];
+    }
   };
   assert.equal(dnd5eAdapter.computeItemLoad(actor), 6);
   assert.equal(dnd5eAdapter.listNativeCurrencies(actor).find(c => c.id === "gp").value, 12);
@@ -78,12 +81,12 @@ test("D&D 5e adapter retains v0.1.8 quantity, weight, price, and currency behavi
   assert.deepEqual(updates, [{ "system.currency.gp": 10 }]);
   assert.deepEqual(await dnd5eAdapter.applyNativeCurrencyDelta(actor, "gp", 0.5), {
     ok: true,
-    previousValue: 12,
-    newValue: 12.5
+    previousValue: 10,
+    newValue: 10.5
   });
   assert.deepEqual(updates, [
     { "system.currency.gp": 10 },
-    { "system.currency.gp": 12.5 }
+    { "system.currency.gp": 10.5 }
   ]);
   assert.equal(dnd5eAdapter.computeNativeCurrencyLoad([
     { source: "native", value: 50 },
@@ -125,12 +128,12 @@ test("PF2e adapter uses loot Actors, native coin APIs, Bulk, and coin filtering"
   const actor = {
     inventory: {
       coins: { pp: 0, gp: 4, sp: 0, cp: 0 },
-      async addCurrency(coins, options) { calls.push(["add", coins, options]); },
-      async removeCurrency(coins, options) { calls.push(["remove", coins, options]); return true; }
+      async addCurrency(coins, options) { calls.push(["add", coins, options]); this.coins.gp += coins.gp; },
+      async removeCurrency(coins, options) { calls.push(["remove", coins, options]); this.coins.gp -= coins.gp; return true; }
     }
   };
   assert.equal((await pf2eAdapter.applyNativeCurrencyDelta(actor, "gp", 3)).newValue, 7);
-  assert.equal((await pf2eAdapter.applyNativeCurrencyDelta(actor, "gp", -2)).newValue, 2);
+  assert.equal((await pf2eAdapter.applyNativeCurrencyDelta(actor, "gp", -2)).newValue, 5);
   assert.equal(PF2E_NATIVE_CURRENCIES.every(currency => currency.wholeUnitsOnly), true);
   assert.deepEqual(calls.map(call => call[0]), ["add", "remove"]);
 

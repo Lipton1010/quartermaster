@@ -178,6 +178,16 @@ export const dnd5eAdapter = Object.freeze({
         details: errorMessage(error)
       };
     }
+    const observed = finiteNonNegative(actor.system?.currency?.[currencyId], Number.NaN);
+    if (observed !== next) {
+      return {
+        ok: false,
+        error: observed === current ? "currency-update-not-applied" : "currency-reconciliation-required",
+        previousValue: current,
+        expectedValue: next,
+        observedValue: observed
+      };
+    }
     return { ok: true, previousValue: current, newValue: next };
   },
 

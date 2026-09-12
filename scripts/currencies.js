@@ -434,6 +434,7 @@ async function applyCurrencyDeltaUnlocked(currencyId, delta, actor = getBackingA
   const currency = getCurrency(currencyId, actor);
   if (!currency) return { status: "failed", error: "invalid-currency-type", currencyType: currencyId };
   const previousValue = normalizeAmount(currency.value, 0);
+  if (!Number.isFinite(previousValue + delta)) return { status: "failed", error: "invalid-delta" };
   const newValue = roundCurrency(previousValue + delta);
   if (newValue < 0) {
     return {
@@ -445,32 +446,40 @@ async function applyCurrencyDeltaUnlocked(currencyId, delta, actor = getBackingA
     };
   }
 
-  if (currency.source === "native") {
-    const applied = await getActiveSystemAdapter().applyNativeCurrencyDelta(actor, currencyId, delta);
-    if (!applied?.ok) {
-      return {
-        status: "failed",
-        error: applied?.error ?? "native-currency-update-failed",
-        currencyType: currencyId,
-        currentBalance: previousValue,
-        requested: Math.abs(delta)
-      };
-    }
-  } else {
-    const config = getCurrencyConfig(actor);
-    const index = config.custom.findIndex(entry => entry.id === currencyId);
-    if (index < 0) return { status: "failed", error: "currency-not-found" };
-    config.custom[index] = { ...config.custom[index], value: newValue };
-    try {
+  let writeError = null;
+  try {
+    if (currency.source === "native") {
+      const applied = await getActiveSystemAdapter().applyNativeCurrencyDelta(actor, currencyId, delta);
+      if (!applied?.ok) writeError = applied?.error ?? "native-currency-update-failed";
+    } else {
+      const config = getCurrencyConfig(actor);
+      const index = config.custom.findIndex(entry => entry.id === currencyId);
+      if (index < 0) return { status: "failed", error: "currency-not-found" };
+      config.custom[index] = { ...config.custom[index], value: newValue };
       await saveCurrencyConfig(actor, config);
-    } catch (error) {
-      // Foundry hooks can report an error after the flag update has already
-      // committed. Treat the observed expected balance as success so callers
-      // do not retry and apply the same delta twice.
-      if (getCurrency(currencyId, actor)?.value !== newValue) throw error;
-      console.warn(`${MODULE_TITLE} | custom currency update reported an error after commit`, error);
     }
+  } catch (error) {
+    writeError = String(error?.message ?? error);
   }
+
+  // A cancelled Foundry write can resolve normally. Only read-back proves
+  // whether it is safe to consume staged money or acknowledge a balance change.
+  const observedValue = getCurrency(currencyId, actor)?.value;
+  if (observedValue !== newValue || (writeError && observedValue === previousValue)) {
+    return {
+      status: "failed",
+      error: observedValue === previousValue
+        ? writeError ?? "currency-update-not-applied"
+        : "currency-reconciliation-required",
+      currencyType: currencyId,
+      previousValue,
+      expectedValue: newValue,
+      observedValue,
+      currentBalance: observedValue,
+      requested: Math.abs(delta)
+    };
+  }
+  if (writeError) console.warn(`${MODULE_TITLE} | currency write reported an error after commit`, writeError);
 
   return { status: "success", currency, previousValue, newValue };
 }

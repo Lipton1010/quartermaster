@@ -11,6 +11,7 @@ import { AsyncLock } from "./async-lock.js";
 
 const STORAGE_LEDGER_KEY = "quartermaster-storage-ledger";
 const storageLedgerLock = new AsyncLock();
+const itemMutationLock = new AsyncLock();
 
 /** Return true only for Foundry's currently elected active GM. */
 export function isActiveStorageGM(
@@ -37,6 +38,12 @@ export function requireActiveStorageGM() {
 export function withStorageLedgerLock(fn) {
   if (typeof fn !== "function") throw new TypeError("storage-ledger-callback-required");
   return storageLedgerLock.acquire(STORAGE_LEDGER_KEY, fn);
+}
+
+// Item mutations may write transaction logs. Always acquire this lock before
+// the storage ledger, and never reacquire it from an Item mutation callback.
+export function withItemMutationLock(fn) {
+  return itemMutationLock.acquire("quartermaster-items", fn);
 }
 
 /** Test/diagnostic visibility without exposing the lock implementation. */

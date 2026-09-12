@@ -538,40 +538,8 @@ export async function realCurrencyChange(data, context) {
     previousValue: currentValue
   });
 
-  // Phase 2: Commit — apply the update, then log the outcome
-  try {
-    const applied = await applyCurrencyDelta(currencyType, delta, backingActor);
-    if (applied.status !== "success") {
-      throw new Error(applied.error ?? "currency-update-failed");
-    }
-    const committedValue = applied.newValue;
-
-    await TransactionLog.writeEntry({
-      requestId,
-      userId,
-      timestamp: Date.now(),
-      type: "currency.commit",
-      currencyType,
-      currencyName: currency.name,
-      currencySymbol: currency.symbol,
-      delta,
-      previousValue: currentValue,
-      newValue: committedValue
-    });
-
-    return {
-      status: "success",
-      resultData: {
-        currencyType,
-        currencyName: currency.name,
-        currencySymbol: currency.symbol,
-        delta,
-        previousValue: currentValue,
-        newValue: committedValue,
-        reason: reason ?? null
-      }
-    };
-  } catch (err) {
+  const applied = await applyCurrencyDelta(currencyType, delta, backingActor);
+  if (applied.status !== "success") {
     await TransactionLog.writeEntry({
       requestId,
       userId,
@@ -581,12 +549,61 @@ export async function realCurrencyChange(data, context) {
       currencyName: currency.name,
       currencySymbol: currency.symbol,
       delta,
-      error: err?.message ?? String(err)
+      error: applied.error,
+      observedValue: applied.observedValue
     });
+    return applied;
+  }
 
+  return finalizeBalanceCommit({
+    requestId,
+    userId,
+    type: "currency.commit",
+    currencyType,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
+    delta,
+    previousValue: applied.previousValue,
+    newValue: applied.newValue
+  }, {
+    status: "success",
+    resultData: {
+      currencyType,
+      currencyName: currency.name,
+      currencySymbol: currency.symbol,
+      delta,
+      previousValue: applied.previousValue,
+      newValue: applied.newValue,
+      reason: reason ?? null
+    }
+  });
+}
+
+async function finalizeBalanceCommit(entry, result) {
+  const TransactionLog = await import("./transaction-log.js");
+  try {
+    if (!await TransactionLog.writeEntry(entry)) throw new Error("commit-log-unavailable");
+    return result;
+  } catch (error) {
+    const finalizationWarning = String(error?.message ?? error);
+    let finalizationRecoveryRecorded = false;
+    try {
+      const { writeRecoveryRecord } = await import("./recovery-records.js");
+      finalizationRecoveryRecorded = Boolean(await writeRecoveryRecord({
+        ...entry,
+        type: `${entry.type}.finalization-failed`,
+        status: "mutation-complete-audit-incomplete",
+        error: finalizationWarning
+      }));
+    } catch (recoveryError) {
+      console.error(`${MODULE_TITLE} | balance finalization recovery log failed`, recoveryError);
+    }
+    // The coordinator must persist the committed result even if neither log
+    // can be written. A terminal failure would invite another balance change.
+    console.error(`${MODULE_TITLE} | balance changed but commit logging failed`, error);
     return {
-      status: "failed",
-      error: err?.message ?? "currency-update-exception"
+      ...result,
+      resultData: { ...result.resultData, finalizationWarning, finalizationRecoveryRecorded }
     };
   }
 }
@@ -727,7 +744,7 @@ async function realResourceChange(data, context) {
 
   // Phase 3: Commit or fail log entry
   if (result.status === "success") {
-    await TransactionLog.writeEntry({
+    return finalizeBalanceCommit({
       type: "resource.commit",
       requestId,
       userId,
@@ -737,7 +754,7 @@ async function realResourceChange(data, context) {
       delta,
       previousValue: result.resultData.previousValue,
       newValue: result.resultData.newValue
-    });
+    }, result);
   } else {
     await TransactionLog.writeEntry({
       type: "resource.failed",

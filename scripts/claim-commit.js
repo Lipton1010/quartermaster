@@ -33,8 +33,10 @@
 import { MODULE_TITLE } from "./constants.js";
 import { sanitizeItemForTransfer, buildItemUuid } from "./sanitization.js";
 import * as TransactionLog from "./transaction-log.js";
-import { isActiveStorageGM, requireActiveStorageGM } from "./storage-ledger.js";
+import { isActiveStorageGM, requireActiveStorageGM, withItemMutationLock } from "./storage-ledger.js";
 import { getActiveSystemAdapter } from "./system-adapters/registry.js";
+import { getBackingActor, getStagingActor } from "./backing-actor.js";
+import { authorizeTransfer } from "./transfer-authorization.js";
 
 export const LOG_TYPES = {
   EGRESS_CLAIM:  "transfer.egress.claim",
@@ -101,7 +103,32 @@ export async function performIngress({ sourceItem, destActor, requestId, userId 
   });
 }
 
-async function performTransfer({
+async function performTransfer(options) {
+  return withItemMutationLock(async () => {
+    if (!isActiveStorageGM()) return failureResult(options.requestId, "preflight", "active-gm-only");
+    const sourceItem = options.sourceItem?.parent?.items?.get?.(options.sourceItem.id);
+    if (!sourceItem) return failureResult(options.requestId, "preflight", "source-item-not-found");
+    const sender = game.users.get(options.userId);
+    // The low-level GM API also supports development fixtures. Player relays
+    // must recheck ownership and storage boundaries after waiting for the lock.
+    if (!sender?.isGM) {
+      const authorization = authorizeTransfer({
+        action: options.direction,
+        sender,
+        sourceActor: sourceItem.parent,
+        sourceItem,
+        destActor: options.destActor,
+        backingActor: getBackingActor(),
+        stagingActor: getStagingActor(),
+        adapter: getActiveSystemAdapter()
+      });
+      if (!authorization.ok) return failureResult(options.requestId, "preflight", authorization.error);
+    }
+    return performTransferUnlocked({ ...options, sourceItem });
+  });
+}
+
+async function performTransferUnlocked({
   direction,
   sourceItem,
   destActor,
@@ -182,8 +209,9 @@ async function performTransfer({
   }
 
   // Create first for both directions so a destination failure never removes
-  // the source. The operation coordinator serializes on source UUID.
+  // the source. The Item mutation lock also excludes GM hide/reveal/delete.
   let created;
+  let createWarning = null;
   try {
     requireActiveStorageGM();
     const result = await destActor.createEmbeddedDocuments("Item", [sanitized], { keepId: true });
@@ -191,20 +219,23 @@ async function performTransfer({
     created ??= destActor.items?.get?.(sanitized._id) ?? null;
     if (!created) throw new Error("destination-create-returned-empty");
   } catch (err) {
-    await writeFailure({
-      failedType,
-      requestId,
-      userId,
-      sourceActor,
-      sourceItem,
-      destActor,
-      stage: "create",
-      error: err
-    });
-    await releaseTerminalSnapshot(requestId);
-    return failureResult(requestId, "create", err, {
-      sourcePreserved: true
-    });
+    created = destActor.items?.get?.(sanitized._id) ?? null;
+    if (!created) {
+      await writeFailure({
+        failedType,
+        requestId,
+        userId,
+        sourceActor,
+        sourceItem,
+        destActor,
+        stage: "create",
+        error: err
+      });
+      await releaseTerminalSnapshot(requestId);
+      return failureResult(requestId, "create", err, { sourcePreserved: true });
+    }
+    createWarning = errToString(err);
+    console.warn(`${MODULE_TITLE} | destination create reported an error after committing`, err);
   }
 
   const actualDestItemId = created.id ?? sanitized._id;
@@ -300,6 +331,7 @@ async function performTransfer({
       actualDestItemId,
       actualDestItemUuid: buildItemUuid(destActor, actualDestItemId),
       matchesPredictedId: actualDestItemId === sanitized._id,
+      createWarning,
       deleteWarning
     });
     if (!commitEntry) throw new Error("commit-log-unavailable");
@@ -336,6 +368,7 @@ async function performTransfer({
     sourceItemUuid: sourceItem.uuid,
     destItemId: actualDestItemId,
     destItemUuid: buildItemUuid(destActor, actualDestItemId),
+    createWarning,
     deleteWarning,
     finalizationWarning,
     finalizationRecoveryRecorded
