@@ -267,57 +267,43 @@ async function promptCurrencyEdit(currencyId = null) {
     </form>
   `;
 
-  return new Promise(resolve => {
-    let resolved = false;
-    let closeHookId = null;
-    const finish = value => {
-      if (resolved) return;
-      resolved = true;
-      if (closeHookId !== null) Hooks.off("closeDialogV2", closeHookId);
-      resolve(value);
-    };
-
-    const dialog = new DialogV2({
-      window: { title, icon: isEdit ? "fa-solid fa-pen" : "fa-solid fa-plus" },
-      position: { width: 500 },
-      classes: ["quartermaster"],
-      content,
-      rejectClose: false,
-      buttons: [
-        {
-          action: "save",
-          label: isEdit ? "Save" : "Add Currency",
-          icon: "fa-solid fa-check",
-          default: true,
-          callback: async (event, button, dlg) => {
-            const root = dlg.element;
-            const data = readCurrencyForm(root, initial, isStandard, isReference);
-            if (!data) throw new Error("validation-failed");
-            const result = isEdit
-              ? await updateCurrency(currency.id, data)
-              : await createCustomCurrency(data);
-            if (result.status !== "success") {
-              notifyFailure(result);
-              throw new Error("validation-failed");
-            }
-            finish(true);
+  const saved = await DialogV2.wait({
+    window: { title, icon: isEdit ? "fa-solid fa-pen" : "fa-solid fa-plus" },
+    position: { width: 500 },
+    classes: ["quartermaster"],
+    content,
+    rejectClose: false,
+    render: (_event, dialog) => wireImagePicker(dialog),
+    buttons: [
+      {
+        action: "save",
+        label: isEdit ? "Save" : "Add Currency",
+        icon: "fa-solid fa-check",
+        default: true,
+        callback: async (event, button, dlg) => {
+          const root = dlg.element;
+          const data = readCurrencyForm(root, initial, isStandard, isReference);
+          if (!data) throw new Error("validation-failed");
+          const result = isEdit
+            ? await updateCurrency(currency.id, data)
+            : await createCustomCurrency(data);
+          if (result.status !== "success") {
+            notifyFailure(result);
+            throw new Error("validation-failed");
           }
-        },
-        {
-          action: "cancel",
-          label: "Cancel",
-          icon: "fa-solid fa-xmark",
-          callback: () => finish(false)
+          return true;
         }
-      ]
-    });
-
-    closeHookId = Hooks.on("closeDialogV2", closed => {
-      if (closed === dialog) finish(false);
-    });
-
-    dialog.render({ force: true }).then(() => wireImagePicker(dialog));
+      },
+      {
+        action: "cancel",
+        label: "Cancel",
+        icon: "fa-solid fa-xmark",
+        callback: () => false
+      }
+    ]
   });
+
+  return saved === true;
 }
 
 function readCurrencyForm(root, initial, isStandard, isReference) {
@@ -426,14 +412,7 @@ function formatCurrencyLoad(currency, adapter) {
     : null;
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+const escapeHtml = value => foundry.utils.escapeHTML(String(value ?? ""));
 
 function escapeAttribute(value) {
   return escapeHtml(value).replace(/`/g, "&#096;");

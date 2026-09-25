@@ -2,23 +2,14 @@
  * Quartermaster — Preferences Dialogs (step 17)
  *
  * Per-popup gear dialogs for client-scope preferences.
- * Uses the canonical closeDialogV2 hook pattern (R-22).
- *
- * Pattern: Save button callback reads form values synchronously (while DOM
- * exists), stashes them. The closeDialogV2 hook then writes settings and
- * resolves the promise. This avoids the V14 issue where DialogV2 does not
- * await async button callbacks.
+ * Read form values before the dialog closes, then persist the preferences.
  */
 
 import { MODULE_ID, MODULE_TITLE, SETTINGS, CHOICES, HOOKS } from "../constants.js";
 
 const { DialogV2 } = foundry.applications.api;
 
-function escapeHtml(s) {
-  if (typeof s !== "string") return "";
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-}
+const escapeHtml = value => foundry.utils.escapeHTML(typeof value === "string" ? value : "");
 
 function radioGroup(name, options, currentValue) {
   return options.map(([value, label]) => {
@@ -59,57 +50,34 @@ async function writePreferences(entries) {
 // Shared dialog runner
 // ============================================================
 
-function _showPreferencesDialog(title, content, readFn) {
-  return new Promise((resolve) => {
-    let resolved = false;
-    let closeHookId = null;
-    let formValues = null;
-
-    const finish = async (saved) => {
-      if (resolved) return;
-      resolved = true;
-      if (closeHookId !== null) {
-        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
-      }
-      if (saved && formValues) {
-        await writePreferences(formValues);
-      }
-      resolve(saved);
-    };
-
-    const dialog = new DialogV2({
-      window: { title, icon: "fa-solid fa-gear" },
-      content,
-      rejectClose: false,
-      buttons: [
-        {
-          action: "save",
-          label: "Save",
-          icon: "fa-solid fa-check",
-          default: true,
-          callback: (event, btn, dlg) => {
-            const root = dlg.element ?? dlg;
-            formValues = readFn(root);
-          }
-        },
-        {
-          action: "cancel",
-          label: "Cancel",
-          icon: "fa-solid fa-xmark",
-          callback: () => {
-            formValues = null;
-          }
+async function _showPreferencesDialog(title, content, readFn) {
+  const formValues = await DialogV2.wait({
+    window: { title, icon: "fa-solid fa-gear" },
+    content,
+    rejectClose: false,
+    buttons: [
+      {
+        action: "save",
+        label: "Save",
+        icon: "fa-solid fa-check",
+        default: true,
+        callback: (event, btn, dlg) => {
+          const root = dlg.element ?? dlg;
+          return readFn(root) ?? false;
         }
-      ]
-    });
-
-    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
-      if (closedApp !== dialog) return;
-      finish(formValues !== null);
-    });
-
-    dialog.render({ force: true });
+      },
+      {
+        action: "cancel",
+        label: "Cancel",
+        icon: "fa-solid fa-xmark",
+        callback: () => false
+      }
+    ]
   });
+
+  if (!formValues) return false;
+  await writePreferences(formValues);
+  return true;
 }
 
 // ============================================================

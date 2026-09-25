@@ -41,11 +41,7 @@ import { getActiveSystemAdapter } from "../system-adapters/registry.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
-function escapeHtml(s) {
-  if (typeof s !== "string") return "";
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-}
+const escapeHtml = value => foundry.utils.escapeHTML(typeof value === "string" ? value : "");
 
 export class LootPrepApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
@@ -486,52 +482,32 @@ async function _promptCurrencyLoot(folderId) {
     </form>
   `;
 
-  return new Promise((resolve) => {
-    let resolved = false;
-    let closeHookId = null;
-    let formValues = null;
-
-    const finish = async (saved) => {
-      if (resolved) return;
-      resolved = true;
-      if (closeHookId !== null) {
-        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
-      }
-      if (saved && formValues) {
-        await addHiddenCurrency(formValues.type, formValues.amount, folderId);
-      }
-      resolve(saved);
-    };
-
-    const dialog = new DialogV2({
-      window: { title: "Add Currency Loot", icon: "fa-solid fa-coins" },
-      content,
-      rejectClose: false,
-      buttons: [
-        {
-          action: "save", label: "Add", icon: "fa-solid fa-plus", default: true,
-          callback: (event, btn, dlg) => {
-            const root = dlg.element ?? dlg;
-            const type = root.querySelector("[name='currencyType']")?.value ?? defaultId;
-            const amount = Number.parseFloat(root.querySelector("[name='amount']")?.value);
-            if (Number.isFinite(amount) && amount > 0) {
-              formValues = { type, amount };
-            }
+  const formValues = await DialogV2.wait({
+    window: { title: "Add Currency Loot", icon: "fa-solid fa-coins" },
+    content,
+    rejectClose: false,
+    buttons: [
+      {
+        action: "save", label: "Add", icon: "fa-solid fa-plus", default: true,
+        callback: (event, btn, dlg) => {
+          const root = dlg.element ?? dlg;
+          const type = root.querySelector("[name='currencyType']")?.value ?? defaultId;
+          const amount = Number.parseFloat(root.querySelector("[name='amount']")?.value);
+          if (Number.isFinite(amount) && amount > 0) {
+            return { type, amount };
           }
-        },
-        { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
-          callback: () => { formValues = null; }
+          return false;
         }
-      ]
-    });
-
-    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
-      if (closedApp !== dialog) return;
-      finish(formValues !== null);
-    });
-
-    dialog.render({ force: true });
+      },
+      { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
+        callback: () => false
+      }
+    ]
   });
+
+  if (!formValues) return false;
+  await addHiddenCurrency(formValues.type, formValues.amount, folderId);
+  return true;
 }
 
 async function _promptHiddenItemCreate(folderId) {
@@ -572,62 +548,37 @@ async function _promptHiddenItemCreate(folderId) {
     </form>
   `;
 
-  return new Promise((resolve) => {
-    let resolved = false;
-    let closeHookId = null;
-    let formValues = null;
-
-    const finish = async (saved) => {
-      if (resolved) return;
-      resolved = true;
-      if (closeHookId !== null) {
-        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
-      }
-
-      if (!saved || !formValues) {
-        resolve(null);
-        return;
-      }
-
-      try {
-        const created = await _createHiddenItem(formValues, folderId);
-        resolve(created);
-      } catch (err) {
-        console.error(`${MODULE_TITLE} | Failed to create hidden Loot Prep item`, err);
-        ui.notifications.error(`${MODULE_TITLE}: could not create hidden item.`);
-        resolve(null);
-      }
-    };
-
-    const dialog = new DialogV2({
-      window: { title: "Create Loot Prep Item", icon: "fa-solid fa-plus" },
-      content,
-      rejectClose: false,
-      buttons: [
-        {
-          action: "save", label: "Create", icon: "fa-solid fa-plus", default: true,
-          callback: (event, btn, dlg) => {
-            const root = dlg.element ?? dlg;
-            const name = root.querySelector("[name='itemName']")?.value?.trim();
-            const type = root.querySelector("[name='itemType']")?.value ?? defaultType;
-            if (name && itemTypes.includes(type)) {
-              formValues = { name, type };
-            }
+  const formValues = await DialogV2.wait({
+    window: { title: "Create Loot Prep Item", icon: "fa-solid fa-plus" },
+    content,
+    rejectClose: false,
+    buttons: [
+      {
+        action: "save", label: "Create", icon: "fa-solid fa-plus", default: true,
+        callback: (event, btn, dlg) => {
+          const root = dlg.element ?? dlg;
+          const name = root.querySelector("[name='itemName']")?.value?.trim();
+          const type = root.querySelector("[name='itemType']")?.value ?? defaultType;
+          if (name && itemTypes.includes(type)) {
+            return { name, type };
           }
-        },
-        { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
-          callback: () => { formValues = null; }
+          return false;
         }
-      ]
-    });
-
-    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
-      if (closedApp !== dialog) return;
-      finish(formValues !== null);
-    });
-
-    dialog.render({ force: true });
+      },
+      { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
+        callback: () => false
+      }
+    ]
   });
+
+  if (!formValues) return null;
+  try {
+    return await _createHiddenItem(formValues, folderId);
+  } catch (err) {
+    console.error(`${MODULE_TITLE} | Failed to create hidden Loot Prep item`, err);
+    ui.notifications.error(`${MODULE_TITLE}: could not create hidden item.`);
+    return null;
+  }
 }
 
 async function _createHiddenItem(formValues, folderId) {
@@ -664,46 +615,26 @@ async function _promptFolderName(title, currentName) {
     </form>
   `;
 
-  return new Promise((resolve) => {
-    let resolved = false;
-    let closeHookId = null;
-    let result = null;
-
-    const finish = async (saved) => {
-      if (resolved) return;
-      resolved = true;
-      if (closeHookId !== null) {
-        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
-      }
-      resolve(saved ? result : null);
-    };
-
-    const dialog = new DialogV2({
-      window: { title, icon: "fa-solid fa-folder-plus" },
-      content,
-      rejectClose: false,
-      buttons: [
-        {
-          action: "save", label: "Save", icon: "fa-solid fa-check", default: true,
-          callback: (event, btn, dlg) => {
-            const root = dlg.element ?? dlg;
-            const name = root.querySelector("[name='folderName']")?.value?.trim();
-            if (name) result = name;
-          }
-        },
-        { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
-          callback: () => { result = null; }
+  const result = await DialogV2.wait({
+    window: { title, icon: "fa-solid fa-folder-plus" },
+    content,
+    rejectClose: false,
+    buttons: [
+      {
+        action: "save", label: "Save", icon: "fa-solid fa-check", default: true,
+        callback: (event, btn, dlg) => {
+          const root = dlg.element ?? dlg;
+          const name = root.querySelector("[name='folderName']")?.value?.trim();
+          return name || false;
         }
-      ]
-    });
-
-    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
-      if (closedApp !== dialog) return;
-      finish(result !== null);
-    });
-
-    dialog.render({ force: true });
+      },
+      { action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
+        callback: () => false
+      }
+    ]
   });
+
+  return result || null;
 }
 
 async function _promptLootPrepNote({ title, currentNote = "", inheritedNote = "" }) {
@@ -722,47 +653,26 @@ async function _promptLootPrepNote({ title, currentNote = "", inheritedNote = ""
     </form>
   `;
 
-  return new Promise((resolve) => {
-    let resolved = false;
-    let closeHookId = null;
-    let saved = false;
-    let result = "";
-
-    const finish = () => {
-      if (resolved) return;
-      resolved = true;
-      if (closeHookId !== null) {
-        try { Hooks.off("closeDialogV2", closeHookId); } catch {}
-      }
-      resolve(saved ? result : null);
-    };
-
-    const dialog = new DialogV2({
-      window: { title, icon: "fa-solid fa-note-sticky" },
-      content,
-      rejectClose: false,
-      buttons: [
-        {
-          action: "save", label: "Save Note", icon: "fa-solid fa-check", default: true,
-          callback: (event, btn, dlg) => {
-            const root = dlg.element ?? dlg;
-            result = root.querySelector("[name='lootPrepNote']")?.value?.trim() ?? "";
-            saved = true;
-          }
-        },
-        {
-          action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
-          callback: () => { saved = false; }
+  const result = await DialogV2.wait({
+    window: { title, icon: "fa-solid fa-note-sticky" },
+    content,
+    rejectClose: false,
+    buttons: [
+      {
+        action: "save", label: "Save Note", icon: "fa-solid fa-check", default: true,
+        callback: (event, btn, dlg) => {
+          const root = dlg.element ?? dlg;
+          return root.querySelector("[name='lootPrepNote']")?.value?.trim() ?? "";
         }
-      ]
-    });
-
-    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
-      if (closedApp === dialog) finish();
-    });
-
-    dialog.render({ force: true });
+      },
+      {
+        action: "cancel", label: "Cancel", icon: "fa-solid fa-xmark",
+        callback: () => false
+      }
+    ]
   });
+
+  return result === false ? null : result;
 }
 
 // ============================================================

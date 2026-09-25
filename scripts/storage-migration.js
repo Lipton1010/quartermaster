@@ -563,19 +563,6 @@ function logIdentity(entry) {
   return stableStringify(entry);
 }
 
-// A key present with an `undefined` value is indistinguishable from an
-// absent key once Foundry actually persists a flag - JSON has no `undefined`.
-// Match that here so a benign, system-dependent `undefined` leaf isn't
-// mistaken for lost or corrupted data. Array elements still become `null`,
-// matching JSON.stringify.
-function stableStringify(value) {
-  if (value == null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return `[${value.map(entry => stableStringify(entry) ?? "null").join(",")}]`;
-  }
-  const keys = Object.keys(value).filter(key => value[key] !== undefined).sort();
-  return `{${keys.map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
-}
 
 function deepEqual(a, b) {
   return stableStringify(a) === stableStringify(b);
@@ -585,3 +572,4 @@ function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
   return JSON.parse(JSON.stringify(value));
 }
+import { stableStringify } from "./stable-json.js";

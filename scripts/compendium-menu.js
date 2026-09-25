@@ -7,9 +7,7 @@
  *
  * GM-only: options only appear for GM users.
  *
- * V14 approach: Hook into the renderCompendium hook, then attach a
- * contextmenu listener to item entries. When right-clicked, we show
- * a custom context menu (same pattern as context-menu.js).
+ * Adds entries to Foundry's Item context menu without replacing its actions.
  */
 
 import { MODULE_TITLE } from "./constants.js";
@@ -20,116 +18,32 @@ import { isActiveStorageGM, requireActiveStorageGM } from "./storage-ledger.js";
 import { sanitizeItemForTransfer } from "./sanitization.js";
 import { getActiveSystemAdapter } from "./system-adapters/registry.js";
 
-function escapeHtml(s) {
-  if (typeof s !== "string") return "";
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-}
-
-let _activeMenu = null;
-
-function closeMenu() {
-  if (_activeMenu) {
-    if (typeof _activeMenu._cleanup === "function") _activeMenu._cleanup();
-    _activeMenu.remove();
-    _activeMenu = null;
-  }
-}
 
 /**
  * Register hooks to inject context menu on compendium item entries.
  * Called once at module ready.
  */
 export function registerCompendiumContextMenu() {
-  // Hook fires every time a compendium window renders its content
-  Hooks.on("renderCompendium", (app, html) => {
-    if (!isActiveStorageGM()) return;
-
-    // Check this is an Item-type compendium
+  Hooks.on("getItemContextOptions", (app, entries) => {
     const pack = app.collection;
-    if (!pack || pack.documentName !== "Item") return;
-
-    const el = html instanceof HTMLElement ? html : html[0] ?? html;
-    if (!el) return;
-
-    // Find all entry rows in the compendium listing
-    const entries = el.querySelectorAll(".directory-item, .entry-name, li.compendium-entry, [data-document-id]");
-    for (const entry of entries) {
-      // Only attach once
-      if (entry.dataset.qmContextAttached) continue;
-      entry.dataset.qmContextAttached = "true";
-
-      entry.addEventListener("contextmenu", (event) => {
-        // Don't override if user is holding shift (some modules use shift+right-click)
-        if (event.shiftKey) return;
-
-        const docId = entry.dataset.documentId ?? entry.dataset.entryId ??
-                      entry.closest("[data-document-id]")?.dataset.documentId;
-        if (!docId) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-        showCompendiumMenu(event, pack, docId);
-      });
-    }
+    if (pack?.documentName !== "Item" || game.packs?.get(pack.collection) !== pack) return;
+    entries.push(
+      {
+        name: "Send to Party Inventory",
+        icon: '<i class="fa-solid fa-box-archive"></i>',
+        group: "quartermaster",
+        condition: () => isActiveStorageGM(),
+        callback: row => handleAction("send-to-inventory", pack, row.dataset.entryId)
+      },
+      {
+        name: "Send to GM Staging",
+        icon: '<i class="fa-solid fa-eye-slash"></i>',
+        group: "quartermaster",
+        condition: () => isActiveStorageGM(),
+        callback: row => handleAction("send-to-staging", pack, row.dataset.entryId)
+      }
+    );
   });
-}
-
-function showCompendiumMenu(event, pack, docId) {
-  closeMenu();
-
-  const menu = document.createElement("div");
-  menu.className = "quartermaster qm-context-menu";
-  menu.innerHTML = `
-    <ul class="qm-context-menu-list">
-      <li class="qm-context-menu-item" data-action="send-to-inventory">
-        <i class="fa-solid fa-box-archive"></i>
-        Send to Party Inventory
-      </li>
-      <li class="qm-context-menu-item" data-action="send-to-staging">
-        <i class="fa-solid fa-eye-slash"></i>
-        Send to GM Staging
-      </li>
-    </ul>
-  `;
-
-  document.body.appendChild(menu);
-  _activeMenu = menu;
-
-  // Position near cursor
-  const menuRect = menu.getBoundingClientRect();
-  let x = event.clientX;
-  let y = event.clientY;
-  if (x + menuRect.width > window.innerWidth)  x = window.innerWidth  - menuRect.width  - 8;
-  if (y + menuRect.height > window.innerHeight) y = window.innerHeight - menuRect.height - 8;
-  menu.style.left = `${x}px`;
-  menu.style.top  = `${y}px`;
-
-  // Wire clicks
-  menu.querySelectorAll(".qm-context-menu-item").forEach(item => {
-    item.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const action = item.dataset.action;
-      closeMenu();
-      handleAction(action, pack, docId);
-    });
-  });
-
-  // Close on outside click or Escape
-  const onOutside = (e) => {
-    if (!menu.contains(e.target)) closeMenu();
-  };
-  const onEscape = (e) => {
-    if (e.key === "Escape") closeMenu();
-  };
-  setTimeout(() => {
-    document.addEventListener("click", onOutside, { once: false });
-    document.addEventListener("keydown", onEscape, { once: true });
-    menu._cleanup = () => {
-      document.removeEventListener("click", onOutside);
-      document.removeEventListener("keydown", onEscape);
-    };
-  }, 0);
 }
 
 async function handleAction(action, pack, docId) {

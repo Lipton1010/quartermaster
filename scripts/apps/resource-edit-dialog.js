@@ -75,84 +75,63 @@ export async function promptResourceEdit({ resource = null } = {}) {
     </div>
   `;
 
-  return new Promise((resolve) => {
-    let resolved = false;
-    let closeHookId = null;
+  const readForm = (dlg) => {
+    const root = dlg.element;
+    if (!root) return null;
+    const name = root.querySelector("#qm-res-name")?.value?.trim() ?? "";
+    const icon = root.querySelector("#qm-res-icon")?.value?.trim() ?? "";
+    const valueRaw = root.querySelector("#qm-res-value")?.value;
+    const maxRaw = root.querySelector("#qm-res-max")?.value;
+    const description = root.querySelector("#qm-res-desc")?.value?.trim() ?? "";
 
-    const finish = (value) => {
-      if (resolved) return;
-      resolved = true;
-      if (closeHookId !== null) {
-        try { Hooks.off("closeDialogV2", closeHookId); } catch { /* ignore */ }
-      }
-      resolve(value);
+    if (!name) {
+      ui.notifications.warn(`${MODULE_TITLE}: name is required.`);
+      return null;
+    }
+
+    const value = parseInt(valueRaw, 10);
+    const max = maxRaw === "" ? null : parseInt(maxRaw, 10);
+
+    return {
+      name,
+      icon: icon || DEFAULT_RESOURCE_ICON,
+      value: Number.isFinite(value) ? value : 0,
+      max: max != null && Number.isFinite(max) && max > 0 ? max : null,
+      description
     };
+  };
 
-    const readForm = (dlg) => {
-      const root = dlg.element;
-      if (!root) return null;
-      const name = root.querySelector("#qm-res-name")?.value?.trim() ?? "";
-      const icon = root.querySelector("#qm-res-icon")?.value?.trim() ?? "";
-      const valueRaw = root.querySelector("#qm-res-value")?.value;
-      const maxRaw = root.querySelector("#qm-res-max")?.value;
-      const description = root.querySelector("#qm-res-desc")?.value?.trim() ?? "";
-
-      if (!name) {
-        ui.notifications.warn(`${MODULE_TITLE}: name is required.`);
-        return null;
-      }
-
-      const value = parseInt(valueRaw, 10);
-      const max = maxRaw === "" ? null : parseInt(maxRaw, 10);
-
-      return {
-        name,
-        icon: icon || DEFAULT_RESOURCE_ICON,
-        value: Number.isFinite(value) ? value : 0,
-        max: max != null && Number.isFinite(max) && max > 0 ? max : null,
-        description
-      };
-    };
-
-    const dialog = new DialogV2({
-      window: {
-        title,
-        icon: isEdit ? "fa-solid fa-pen-to-square" : "fa-solid fa-plus"
-      },
-      position: { width: 460 },
-      classes: ["quartermaster"],
-      content,
-      buttons: [
-        {
-          action: "save",
-          label: isEdit ? "Save" : "Add",
-          icon: "fa-solid fa-check",
-          default: true,
-          callback: (event, button, dlg) => {
-            const data = readForm(dlg);
-            if (!data) {
-              // Validation failed; keep the dialog open by not resolving
-              throw new Error("validation-failed");
-            }
-            finish(data);
+  const result = await DialogV2.wait({
+    window: {
+      title,
+      icon: isEdit ? "fa-solid fa-pen-to-square" : "fa-solid fa-plus"
+    },
+    position: { width: 460 },
+    classes: ["quartermaster"],
+    content,
+    buttons: [
+      {
+        action: "save",
+        label: isEdit ? "Save" : "Add",
+        icon: "fa-solid fa-check",
+        default: true,
+        callback: (event, button, dlg) => {
+          const data = readForm(dlg);
+          if (!data) {
+            throw new Error("validation-failed");
           }
-        },
-        {
-          action: "cancel",
-          label: "Cancel",
-          icon: "fa-solid fa-xmark",
-          callback: () => finish(null)
+          return data;
         }
-      ],
-      rejectClose: false
-    });
-
-    closeHookId = Hooks.on("closeDialogV2", (closedApp) => {
-      if (closedApp !== dialog) return;
-      if (!resolved) finish(null);
-    });
-
-    dialog.render({ force: true }).then(() => {
+      },
+      {
+        action: "cancel",
+        label: "Cancel",
+        icon: "fa-solid fa-xmark",
+        callback: () => false
+      }
+    ],
+    rejectClose: false,
+    render: (_event, dialog) => {
       const root = dialog.element;
       if (!root) return;
 
@@ -180,6 +159,7 @@ export async function promptResourceEdit({ resource = null } = {}) {
           fp.render(true);
         });
       }
-    });
+    }
   });
+  return result || null;
 }

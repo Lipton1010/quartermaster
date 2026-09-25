@@ -428,14 +428,7 @@ async function safeSetSetting(key, value) {
   }
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+const escapeHtml = value => foundry.utils.escapeHTML(String(value ?? ""));
 
 function getRenderedElement(html) {
   if (typeof html?.querySelectorAll === "function") return html;

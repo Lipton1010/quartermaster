@@ -10,6 +10,8 @@ Quartermaster 1.0.0 is a release candidate. This gate is **closed** until every 
 
 **Package and live evidence below describe the previous candidate.** ZIP `48c4af2f…` has not been rebuilt and does not include these fixes. The prior six-cell live matrix does not validate the changed code. A new candidate package and affected isolated live checks remain required before release approval.
 
+**Local simplification pass (2026-09-12):** the five ponytail audit recommendations are implemented on top of `fb0b05c`. The suite now passes **149/149 tests**, including eight new UI/serialization regression checks. Installed v13.351 and v14.367 dialog methods also passed API contract checks using document doubles. These are not live-world UI results. See [PONYTAIL-REFACTOR-2026-09-12.md](PONYTAIL-REFACTOR-2026-09-12.md).
+
 **Committed candidate for the one-final-zip matrix:** `0fb96cb` on `feat/system-agnostic` (Paul decisions 1–5 recorded; product scripts unchanged vs `b03a73b`). **Package rebuilt 2026-08-26** via `npm run package` + `tools/validate-package.mjs`: **69** clean entries, SHA-256 `48c4af2f50182f378c8c0040901632e72fff17cb80926dd4dcea1a02b22132d8` (supersedes `c443f2db…`). `npm test` **117/117** on `0fb96cb`. **Full six-cell matrix against this zip: Passed** (2026-08-26). Isolated installs extracted from that zip (no `.cursor`, no `docs/`); live interceptor SHA-256 `51E7246FE2CB008F9FC443B577CE665B2C81866DFEF31BD16B83CAE0A154FDCD`.
 
 **Opus + Fable + Codex audit reconciliation (2026-08-24, recorded through `398967d`).** Live verification prioritized over redesign. **Merge to `main` is not authorized.**

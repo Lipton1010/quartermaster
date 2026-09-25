@@ -474,7 +474,7 @@ function inspectDurableRequest(requestId, binding) {
     return { state: "collision" };
   }
 
-  const coordinatorTerminal = findLast(entries, entry =>
+  const coordinatorTerminal = entries.findLast(entry =>
     (entry.type === OPERATION_COMMIT_TYPE || entry.type === OPERATION_FAILED_TYPE)
     && entry.requestFingerprint === binding.fingerprint
   );
@@ -490,11 +490,9 @@ function inspectDurableRequest(requestId, binding) {
     };
   }
 
-  const claimIndex = findLastIndex(entries, entry => entry.type === OPERATION_CLAIM_TYPE);
-  const operationSpecificTerminal = findLast(
-    claimIndex >= 0 ? entries.slice(claimIndex + 1) : [],
-    entry => isExplicitTerminalEntry(entry) && !isCoordinatorEntry(entry)
-  );
+  const claimIndex = entries.findLastIndex(entry => entry.type === OPERATION_CLAIM_TYPE);
+  const operationSpecificTerminal = (claimIndex >= 0 ? entries.slice(claimIndex + 1) : [])
+    .findLast(entry => isExplicitTerminalEntry(entry) && !isCoordinatorEntry(entry));
   if (operationSpecificTerminal) {
     const type = String(operationSpecificTerminal.type ?? "");
     const committed = type.endsWith(".commit");
@@ -560,31 +558,6 @@ function canonicalJson(value) {
   return stableStringify(JSON.parse(serialized));
 }
 
-// A key present with an `undefined` value is indistinguishable from an
-// absent key once Foundry actually persists data - JSON has no `undefined`.
-// Match that here so a benign, system-dependent `undefined` leaf isn't
-// mistaken for a genuinely different fingerprint. Array elements still
-// become `null`, matching JSON.stringify.
-function stableStringify(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return `[${value.map(entry => stableStringify(entry) ?? "null").join(",")}]`;
-  }
-  const keys = Object.keys(value).filter(key => value[key] !== undefined).sort();
-  return `{${keys.map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
-}
-
-function findLast(entries, predicate) {
-  const index = findLastIndex(entries, predicate);
-  return index >= 0 ? entries[index] : null;
-}
-
-function findLastIndex(entries, predicate) {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    if (predicate(entries[index])) return index;
-  }
-  return -1;
-}
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
@@ -605,3 +578,4 @@ export function diagnostics() {
 export function _resetCacheForTesting() {
   if (_cache) _cache.clear();
 }
+import { stableStringify } from "./stable-json.js";

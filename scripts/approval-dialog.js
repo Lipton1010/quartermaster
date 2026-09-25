@@ -179,12 +179,4 @@ export async function promptCurrencyApproval(request) {
   });
 }
 
-function escapeHtml(str) {
-  if (typeof str !== "string") return "";
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+const escapeHtml = value => foundry.utils.escapeHTML(typeof value === "string" ? value : "");
