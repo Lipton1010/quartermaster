@@ -1,0 +1,44 @@
+<h1><strong>Quartermaster</strong></h1>
+<p><em>Shared party inventory, currency, and GM loot prep for D&amp;D 5e.</em></p>
+<p>☕ Enjoying Quartermaster? <strong><a href="https://ko-fi.com/paulmiscavage" target="_blank" rel="nofollow noopener">Support me on Ko-fi</a></strong>.</p>
+<p>Quartermaster is a persistent party-state ledger: one shared vault for what the party owns, the currencies and resources it manages, and a clear history of every change. It replaces scattered character-sheet notes and spreadsheets with a focused workflow built for long-running campaigns.</p>
+<p><strong>Verified with Foundry VTT 14.369 and D&amp;D 5e 6.0.6.</strong> Screenshots below show v0.1.12 with illustrative demo data. Click any image to view it at full size.</p>
+<p>Use it alongside a world-loot module such as Item Piles: Item Piles handles treasure on the map, while Quartermaster keeps the party's lasting inventory, currency, and history organized.</p>
+<hr />
+<h2><strong>🎒 The Shared Party Vault</strong></h2>
+<p>Give every player a live inventory window from the sidebar. Drag items between character sheets and the vault, double-click to inspect them, and sort by name, type, loot status, or a custom manual order. Track capacity, item values, and optional currency weight while each player keeps their own display preferences.</p>
+<p>Drag items from the vault or GM Loot Prep directly onto a player-character entry in the Actors directory. You can also drop items anywhere on a character sheet, even when its inventory tab is not active.</p>
+<p><a href="https://raw.githubusercontent.com/Lipton1010/quartermaster/main/screenshots/quartermaster-inventory-v0.1.12.png" target="_blank" rel="noopener"><img src="https://raw.githubusercontent.com/Lipton1010/quartermaster/main/screenshots/quartermaster-inventory-v0.1.12.png" alt="Shared Party Inventory with shared balances, Guild Marks, resource counters, and item controls" width="760" style="display:block;width:100%;max-width:760px;height:auto;border-radius:8px;" /></a></p>
+<p><em>One shared vault for your party’s equipment, currencies, and supplies.</em></p>
+<hr />
+<h2><strong>🪙 Flexible Currency Management</strong></h2>
+<p>Manage PP, GP, EP, SP, and CP plus unlimited GM-defined custom currencies. Choose any convertible built-in or custom currency as the fixed reference currency, then configure the value of every other currency relative to it. Changing the reference automatically rebases existing rates and approval thresholds while preserving their established economic relationships.</p>
+<p>Each currency can have its own name, short label, decimal balance, visibility setting, optional conversion value, and tile image. Custom currencies can also be assigned an optional per-unit weight, while built-in currencies remain fixed at 50 coins per pound. Currency weight is only applied when the Currency Counts Toward Weight setting is enabled.</p>
+<p>Stage currency in Loot Prep, reveal it directly into the shared balance, and use free, threshold-based, or required GM approval for changes.</p>
+<p><a href="https://raw.githubusercontent.com/Lipton1010/quartermaster/main/screenshots/quartermaster-currency-manager-v0.1.12.png" target="_blank" rel="noopener"><img src="https://raw.githubusercontent.com/Lipton1010/quartermaster/main/screenshots/quartermaster-currency-manager-v0.1.12.png" alt="Currency manager with gold as the reference currency and custom Guild Marks worth five gold each" width="760" style="display:block;width:100%;max-width:760px;height:auto;border-radius:8px;" /></a></p>
+<p><em>Use standard coins, create custom currencies, and set the exchange rates that fit your world.</em></p>
+<hr />
+<h2><strong>📦 GM Loot Prep</strong></h2>
+<p>Prepare hidden treasure for encounters, locations, merchants, or quest rewards. Organize items into folders, collapse completed or inactive hoards to keep large lists manageable, stage built-in or custom-currency payouts, import from compendiums, then reveal one item, a selection, or an entire hoard when the moment is right. Shift+click reveal posts a chat announcement.</p>
+<p>Add notes to folders or individual items to record where treasure is found or provide other GM reminders. Folder notes automatically apply to every item in that folder, while individual item notes take precedence. Notes can be added through the right-click menu, and existing folder notes can also be edited by clicking their green note icon.</p>
+<p>Currency management can be opened directly from GM Loot Prep for quick access while preparing rewards.</p>
+<p><a href="https://raw.githubusercontent.com/Lipton1010/quartermaster/main/screenshots/quartermaster-loot-prep-v0.1.12.png" target="_blank" rel="noopener"><img src="https://raw.githubusercontent.com/Lipton1010/quartermaster/main/screenshots/quartermaster-loot-prep-v0.1.12.png" alt="GM Loot Prep with two treasure folders, inherited notes, magic items, and staged gold" width="760" style="display:block;width:100%;max-width:760px;height:auto;border-radius:8px;" /></a></p>
+<p><em>Prepare treasure by encounter, keep your notes with it, and reveal rewards when the party earns them.</em></p>
+<hr />
+<h2><strong>📋 Transaction Log</strong></h2>
+<p>Transfers, currency changes, and resource changes are recorded automatically. Search and filter the log, view related entries grouped by operation, and trace who did what when the party asks where something went.</p>
+<p><a href="https://raw.githubusercontent.com/Lipton1010/quartermaster/main/screenshots/quartermaster-transaction-log-v0.1.12.png" target="_blank" rel="noopener"><img src="https://raw.githubusercontent.com/Lipton1010/quartermaster/main/screenshots/quartermaster-transaction-log-v0.1.12.png" alt="Transaction Log showing item transfers and party currency changes" width="760" style="display:block;width:100%;max-width:760px;height:auto;border-radius:8px;" /></a></p>
+<p><em>Follow the history of transfers and spending without searching through chat.</em></p>
+<hr />
+<h2><strong>⚔️ More Ways to Fit Your Table</strong></h2>
+<ul>
+<li><strong>🎯 Custom resource counters.</strong> Track ammunition, rations, charges, supplies, or any other party resource.</li>
+<li><strong>🛠️ Configurable presentation.</strong> Rename the vault, customize its sidebar button, add a subtle watermark, hide item prices from players, or place an optional GM-only scene shortcut token.</li>
+<li><strong>📚 Compendium integration.</strong> Send items straight from compendiums to the party vault or GM staging.</li>
+<li><strong>✅ Friendly integrations.</strong> Compatible with Tidy 5e Sheets and designed to coexist cleanly with Item Piles.</li>
+</ul>
+<hr />
+<p>⚠️ <strong>Quartermaster replaces fvtt-party-resources.</strong> Uninstall it before enabling Quartermaster.</p>
+<hr />
+<p>📦 <strong>v0.1.12</strong> | ✅ Foundry VTT <strong>v13–v14</strong> (verified on <strong>v14.369</strong>) | 🎲 dnd5e <strong>5.0.0+</strong> (verified on <strong>6.0.6</strong>) | 🛠️ Active development | 🐛 <a href="https://github.com/Lipton1010/quartermaster/issues" target="_blank" rel="nofollow noopener">Bug reports &amp; feedback</a></p>
+<p><em>D&amp;D 5e 6.x requires Foundry VTT 14.367 or newer. Quartermaster remains focused on D&amp;D 5e; system-agnostic development is currently on hold.</em></p>
