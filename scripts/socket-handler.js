@@ -253,6 +253,8 @@ async function dispatchItemTransfer(envelope, senderUserId) {
     return { status: "failed", error: "missing-item-id" };
   }
 
+  if (!["ingress", "egress"].includes(action)) return { status: "failed", error: "unknown-action", action };
+
   // Resource keys: the item itself, plus any actors involved
   const itemKey = payload.sourceItemId ?? payload.itemId ?? "unknown";
   const resourceKeys = [`item:${itemKey}`];

@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.12] - 2026-10-21
+
+### Changed
+- Verify compatibility with Foundry VTT 14.369 and D&D 5e 6.0.6. Quartermaster remains D&D 5e-specific; system-agnostic development is on hold.
+
+### Fixed
+- Deduplicate resource lock keys so requests naming the same actor more than once cannot deadlock the operation queue.
+- Reject unsupported item-transfer actions before acquiring locks or resolving documents, preserving malformed-payload validation.
+
+### Verification
+- All 356 existing runtime checks pass in an isolated test world on Foundry 14.369 / D&D 5e 6.0.6, including duplicate-lock regression coverage.
+- Shared Party Inventory, GM Loot Prep, and Transaction Log render successfully.
+- Correct the resource test fixture to restore capacity after testing maximum-value clamping.
+
 ## [0.1.11] - 2026-08-21
 
 ### Added

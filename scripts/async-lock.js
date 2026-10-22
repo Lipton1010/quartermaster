@@ -66,7 +66,7 @@ export class AsyncLock {
    * @returns {Promise<*>}
    */
   async acquireMulti(keys, fn) {
-    const sorted = [...keys].sort();
+    const sorted = [...new Set(keys)].sort();
     return this._recursiveAcquire(sorted, 0, fn);
   }
 

@@ -39,8 +39,10 @@ A simple way to think about it:
 
 ## Requirements
 
-- Foundry VTT v13 or newer (verified on v14.367)
-- dnd5e system 5.0.0 or newer (verified on 5.3.3)
+- Foundry VTT v13 or newer (verified on v14.369)
+- dnd5e system 5.0.0 or newer (verified on 6.0.6)
+
+D&D 5e 6.x requires Foundry v14.367 or newer. The latest verification used Foundry v14.369 with D&D 5e 6.0.6; older minimum versions remain unchanged.
 
 ## Installation
 
@@ -78,7 +80,7 @@ The macro works for both players and GMs while Quartermaster is active.
 
 ## Status
 
-**v0.1.11 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with collapsible folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
+**v0.1.12 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with collapsible folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
 
 ## License
 

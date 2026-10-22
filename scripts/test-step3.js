@@ -357,10 +357,14 @@ async function testAsyncLockDirectly() {
 
   const expected = "1-in,1-out,2-in,2-out,3-in,3-out";
   const actual = order.join(",");
-  const pass = actual === expected && lock.size() === 0;
+  const duplicateResult = await Promise.race([
+    lock.acquireMulti(["duplicate", "duplicate"], async () => "completed"),
+    delay(1000).then(() => "timed-out")
+  ]);
+  const pass = actual === expected && duplicateResult === "completed" && lock.size() === 0;
 
   return {
-    name: "8. AsyncLock FIFO and self-prune",
+    name: "8. AsyncLock FIFO, duplicate keys, and self-prune",
     pass,
     detail: pass
       ? `strict FIFO order; map auto-pruned (size=${lock.size()})`

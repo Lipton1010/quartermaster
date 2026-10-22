@@ -158,6 +158,8 @@ export async function runStep14Tests() {
     // -----------------------------------------------------
     // applyDelta
     // -----------------------------------------------------
+    // Restore headroom after testing clamping to max=3.
+    await Resources.updateResource(r1.id, { max: 10 });
     const addResult = await Resources.applyDelta(r1.id, 1);
     t.assertEq("applyDelta(+1): status success",
       addResult.status, "success");
