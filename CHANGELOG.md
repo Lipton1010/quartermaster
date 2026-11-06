@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.13] - 2026-11-06
+
+### Changed
+- Verify compatibility with Foundry VTT 14.370 and D&D 5e 6.0.6.
+- Package only module runtime files and documentation, excluding Git history and development metadata.
+
+### Fixed
+- Read Foundry v14's authenticated query sender from `options.user`. Player requests now use the player's identity for currency approvals and transaction logs instead of the receiving GM's identity.
+- Update the documented manual installation link to v0.1.13.
+
+### Verification
+- All 357 runtime checks pass in a disposable world on Foundry 14.370 / D&D 5e 6.0.6, including a new sender-context regression that fails before the fix.
+- Separate GM and player sessions confirm approval and denial, player attribution despite a forged payload user ID, and Item ingress/egress without duplication.
+- Shared Party Inventory, GM Loot Prep, Transaction Log, and Actors-directory controls render successfully. A marked Item drop onto a character sheet's Details tab transfers the complete stack.
+- Existing minimum versions remain unchanged; older Foundry versions were not re-tested for this release.
+
 ## [0.1.12] - 2026-10-21
 
 ### Changed

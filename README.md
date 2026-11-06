@@ -39,10 +39,10 @@ A simple way to think about it:
 
 ## Requirements
 
-- Foundry VTT v13 or newer (verified on v14.369)
+- Foundry VTT v13 or v14 (verified on v14.370)
 - dnd5e system 5.0.0 or newer (verified on 6.0.6)
 
-D&D 5e 6.x requires Foundry v14.367 or newer. The latest verification used Foundry v14.369 with D&D 5e 6.0.6; older minimum versions remain unchanged.
+D&D 5e 6.x requires Foundry v14.367 or newer. The latest verification used Foundry v14.370 with D&D 5e 6.0.6; older minimum versions remain unchanged.
 
 ## Installation
 
@@ -54,7 +54,7 @@ Quartermaster is available directly through the Foundry VTT package browser.
 
 ### Manual Installation
 If you need to install a specific build or are testing a pre-release version, paste this manifest URL into Foundry's "Install Module" dialog:
-`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.11/module.json`
+`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.13/module.json`
 
 ## Macro integration
 

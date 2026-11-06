@@ -72,10 +72,9 @@ function registerQueryHandler() {
     return;
   }
   CONFIG.queries[QUERY_NAME] = async (data, options = {}) => {
-    // options.userId is the authoritative sender ID from Foundry's
-    // query framework. Falls back to game.user.id if unavailable
-    // (shouldn't happen in practice).
-    const senderUserId = options.userId ?? game.user.id;
+    // Foundry v14 supplies the authenticated User in options.user.
+    // Keep the existing fallbacks for older query contexts.
+    const senderUserId = options.user?.id ?? options.userId ?? game.user.id;
     return await dispatchPayload(data, senderUserId);
   };
   _queryRegistered = true;

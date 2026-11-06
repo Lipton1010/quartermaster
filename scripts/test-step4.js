@@ -2,9 +2,8 @@
  * Quartermaster — Step 4 Test Harness
  *
  * Verifies the socket dispatch pipeline. Tests run from the GM client and
- * exercise the local dispatch path (since cross-client testing requires
- * another connected user). The dispatch logic itself is the same whether
- * called from a player query or a local GM invocation.
+ * exercise local dispatch and the registered query handler's sender context.
+ * Full cross-client testing still requires another connected user.
  *
  * Run from the F12 console as GM:
  *   await game.modules.get("quartermaster").api.test.runStep4Tests();
@@ -53,6 +52,7 @@ export async function runStep4Tests() {
   results.push(await testSerializationAcrossSocketLayer());
   results.push(await testUserIdMismatchWarning());
   results.push(await testActiveGMDetection());
+  results.push(await testQuerySenderContext());
 
   const passed = results.filter(r => r.pass).length;
   const failed = results.length - passed;
@@ -361,6 +361,36 @@ async function testActiveGMDetection() {
       ? `registered=true, weAreActiveGM=true, activeGMId=${d.activeGMId}`
       : `diagnostics=${JSON.stringify(d)}`
   };
+}
+
+/**
+ * Foundry v14's authenticated User must take precedence over legacy context
+ * fields and the user ID claimed in the payload. A zero delta leaves balances
+ * unchanged while the operation log records which user reached dispatch.
+ */
+async function testQuerySenderContext() {
+  let sender = game.users.find(user => !user.isGM);
+  const temporary = !sender;
+  if (temporary) sender = await User.create({ name: "QM Step 4 Sender", role: CONST.USER_ROLES.PLAYER });
+  try {
+    const requestId = newTestId("query-sender");
+    const result = await CONFIG.queries["quartermaster.processRequest"]({
+      type: PAYLOAD_TYPES.CURRENCY_CHANGE,
+      requestId,
+      userId: game.user.id,
+      timestamp: Date.now(),
+      payload: { currencyType: "gp", delta: 0 }
+    }, { user: sender, userId: game.user.id });
+    const { findByRequestId } = await import("./transaction-log.js");
+    const entry = findByRequestId(requestId);
+    return {
+      name: "10. Native query sender overrides legacy and claimed user IDs",
+      pass: result.status === "success" && entry?.actorId === sender.id,
+      detail: `status=${result.status}, logged sender=${entry?.actorId}, expected=${sender.id}`
+    };
+  } finally {
+    if (temporary) await sender.delete();
+  }
 }
 
 /**
