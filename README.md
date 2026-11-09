@@ -2,7 +2,20 @@
 
 A shared party inventory and resource manager for D&D 5e on Foundry Virtual Tabletop.
 
-Support development: [Ko-fi](https://ko-fi.com/paulmiscavage)
+[Install in Foundry](#installation) · [Latest release](https://github.com/Lipton1010/quartermaster/releases/latest) · [Compatibility](#compatibility) · [Support development](https://ko-fi.com/paulmiscavage)
+
+![Quartermaster shared inventory with party currencies, resource counters, item quantities and carrying capacity](screenshots/quartermaster-inventory-v0.1.12.png)
+
+*Actual interface from v0.1.12. The current published release is v0.1.13.*
+
+### One place for the party's shared gear
+
+- **Share the haul.** Move items between character sheets and the party stash.
+- **Prepare the next encounter.** Stage loot privately, then reveal it when the party finds it.
+- **Follow the money.** Track standard and custom currencies alongside consumable resources.
+- **Keep the history.** Review who changed the inventory in a searchable transaction log.
+
+[Browse the screenshot gallery](screenshots/) · [Read the changelog](CHANGELOG.md)
 
 ## When to use Quartermaster
 
@@ -80,7 +93,7 @@ The macro works for both players and GMs while Quartermaster is active.
 
 ## Status
 
-**v0.1.12 — Pre-release.** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with collapsible folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. v1.0 will follow after a period of community testing and feedback, plus the item identification flow and Foundry package listing.
+**Current published release: [v0.1.13](https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.13).** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with collapsible folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. Quartermaster is available through the Foundry package browser. See the release notes and changelog for version-specific changes.
 
 ## License
 
