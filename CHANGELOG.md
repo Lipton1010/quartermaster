@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.14] - 2026-11-19
+
+### Changed
+- Verify compatibility with D&D 5e 6.1.1 on Foundry VTT 14.370.
+
+### Verification
+- All 357 runtime checks passed in a disposable world migrated from D&D 5e 6.0.6 to 6.1.1.
+- Shared Party Inventory, GM Loot Prep, Currency Manager, Transaction Log, and a D&D 5e character sheet rendered successfully. A separate player session confirmed inventory access and currency controls.
+
+
 ## [0.1.13] - 2026-11-06
 
 ### Changed
