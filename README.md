@@ -4,9 +4,9 @@ A shared party inventory and resource manager for D&D 5e on Foundry Virtual Tabl
 
 [Install in Foundry](#installation) · [Latest release](https://github.com/Lipton1010/quartermaster/releases/latest) · [Compatibility](#compatibility) · [Support development](https://ko-fi.com/paulmiscavage)
 
-![Quartermaster shared inventory with party currencies, resource counters, item quantities and carrying capacity](screenshots/quartermaster-inventory-v0.1.12.png)
+<img src="screenshots/quartermaster-inventory-v0.1.13.png" width="500" alt="Quartermaster shared inventory showing currency balances, item quantities, and carrying capacity">
 
-*Actual interface from v0.1.12. The current published release is v0.1.13.*
+*Quartermaster v0.1.13 running on Foundry VTT 14.370 with D&D 5e 6.1.1.*
 
 ### One place for the party's shared gear
 
@@ -14,6 +14,17 @@ A shared party inventory and resource manager for D&D 5e on Foundry Virtual Tabl
 - **Prepare the next encounter.** Stage loot privately, then reveal it when the party finds it.
 - **Follow the money.** Track standard and custom currencies alongside consumable resources.
 - **Keep the history.** Review who changed the inventory in a searchable transaction log.
+
+<details>
+<summary>Currency Manager and Transaction Log screenshots</summary>
+
+<img src="screenshots/quartermaster-currency-manager-v0.1.13.png" width="540" alt="Currency Manager showing the reference currency, exchange rates, and visibility controls">
+
+<img src="screenshots/quartermaster-transaction-log-v0.1.13.png" width="640" alt="Transaction Log showing grouped inventory changes, category and status filters, and search">
+
+Player and character names in the transaction log have been anonymized.
+
+</details>
 
 [Browse the screenshot gallery](screenshots/) · [Read the changelog](CHANGELOG.md)
 
