@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _(Entries land here as work progresses; promoted to a dated version section on release.)_
 
 
+## [0.1.15] - 2026-11-20
+
+### Fixed
+- Restore Foundry's native right-click menu for Item compendium entries. GMs can send an Item to Party Inventory or GM Staging alongside the usual Import Entry and Delete Entry actions. Foundry's permission and pack lock rules still apply. [#6](https://github.com/Lipton1010/quartermaster/issues/6)
+
+### Verification
+- Tested on Foundry VTT 14.370 with D&D 5e 6.1.1, including locked and unlocked packs, GM and non-GM menus, reopening packs, and both transfer destinations.
+
 ## [0.1.14] - 2026-11-19
 
 ### Changed
@@ -409,7 +417,8 @@ Initial public release. Core feature set complete through build step 18.
 - Sidebar injection stubs (pending step 4 of Build Sequence)
 
 
-[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.15...HEAD
+[0.1.15]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.15
 [0.1.11]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.11
 [0.1.10]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.10
 [0.1.9]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.9
