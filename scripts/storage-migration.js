@@ -303,10 +303,23 @@ function verifyMigratedItem(expected, actual, source) {
     type: data?.type ?? null,
     img: data?.img ?? null,
     system: normalizeSystemSets(data?.system ?? {}, source.system),
-    effects: data?.effects ?? [],
+    effects: (data?.effects ?? []).map(comparableEffect),
     flags: data?.flags ?? {}
   });
   return deepEqual(project(expected), project(actual));
+}
+
+// Foundry regenerates these DocumentStatsField values when it creates a document.
+// Keep effect provenance (including compendiumSource, duplicateSource and exportSource).
+function comparableEffect(effect) {
+  if (!effect?._stats) return effect;
+  const { _stats, ...comparable } = effect;
+  const stats = { ..._stats };
+  for (const key of ["createdTime", "modifiedTime", "lastModifiedBy", "coreVersion", "systemId", "systemVersion"]) {
+    delete stats[key];
+  }
+  if (Object.keys(stats).length) comparable._stats = stats;
+  return comparable;
 }
 
 function normalizeSystemSets(value, model, path = []) {

@@ -18,6 +18,7 @@ _(Merge, installation, tagging, and publication remain gated on review of the mi
 
 ### Fixed
 - Resume an interrupted vault upgrade after either private metadata flag has been cleared. Verify ordered Item fields and third-party flags exactly, and preserve the origins of self-referencing Active Effects when moving between storage actors.
+- Allow Foundry to assign new creation and modification statistics to a migrated Active Effect while verifying its source, origin, changes and flags.
 - Return committed Item creations as successful when a hook or transaction log fails after the write. Attempt to record logging failures on the private staging actor.
 - Convert D&D item load to pounds using the system's unit definitions. Apply the destination actor's preparation defaults to transferred ordinarily prepared spells.
 - Preserve same-actor D&D container links during migration. Check linked items before moving them between actors.

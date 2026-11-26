@@ -323,6 +323,45 @@ test("migration rebases self-referencing effects, including copies interrupted o
   assert.equal(shared.items.get("crown"), null);
 });
 
+test("embedded effect copies accept regenerated server stats and retain strict provenance and change verification", async () => {
+  const historicStats = {
+    coreVersion: "13.351", systemId: "prior-system", systemVersion: "5.0",
+    createdTime: 10, modifiedTime: 20, lastModifiedBy: "prior-gm",
+    compendiumSource: "Compendium.source.items.Item.a", duplicateSource: "Item.original",
+    exportSource: { uuid: "Item.exported", coreVersion: "13.351" }
+  };
+  const latestStats = {
+    coreVersion: "14.370", systemId: "dnd5e", systemVersion: "6.1.1",
+    createdTime: 30, modifiedTime: 30, lastModifiedBy: "active-gm"
+  };
+  for (const difference of [null, "compendiumSource", "duplicateSource", "exportSource", "changes", "flags", "origin"]) {
+    const [shared, staging] = legacyActors();
+    const crown = shared.items.get("crown");
+    crown.effects = [{ _id: "effect", origin: crown.uuid, _stats: historicStats,
+      changes: [{ key: "system.one" }, { key: "system.two" }], flags: { sequence: ["first", "second"] } }];
+    const create = staging.createEmbeddedDocuments.bind(staging);
+    staging.createEmbeddedDocuments = (type, data) => {
+      const copy = structuredClone(data);
+      const effect = copy[0].effects[0];
+      Object.assign(effect._stats, latestStats);
+      if (difference === "changes") effect.changes.reverse();
+      else if (difference === "flags") effect.flags.sequence.reverse();
+      else if (difference === "origin") effect.origin = crown.uuid;
+      else if (difference) effect._stats[difference] = null;
+      return create(type, copy);
+    };
+    if (difference) {
+      await assert.rejects(migrateStorageSchema(shared, staging), /hidden-item-verification-failed/);
+      assert.ok(shared.items.get("crown"), difference);
+    } else {
+      await migrateStorageSchema(shared, staging);
+      const migrated = staging.items.get("crown");
+      assert.equal(migrated.effects[0].origin, migrated.uuid);
+      assert.equal(shared.items.get("crown"), null);
+    }
+  }
+});
+
 test("schema migration moves private state, verifies it, and is idempotent", async () => {
   const [shared, staging] = legacyActors();
   const result = await migrateStorageSchema(shared, staging);
