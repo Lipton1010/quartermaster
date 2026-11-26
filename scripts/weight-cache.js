@@ -1,22 +1,21 @@
 /**
  * Quartermaster — Weight Cache
  *
- * In-memory cache of expensive aggregate values computed from an actor's
- * items and currency. The cached values are raw (settings-independent);
+ * In-memory cache of expensive aggregate load values computed from an actor's
+ * items and native currency. The cached values are raw (settings-independent);
  * settings-derived values like "capacity percent" or "currency weight"
  * are computed by callers at read time using these raw inputs.
  *
  * Cached per actor:
- *   - itemWeight:    sum of (item.weight × item.quantity) across visible items
- *   - coinSum:       sum of all 5 currency values
- *   - coinValues:    { pp, gp, ep, sp, cp } snapshot
+ *   - itemLoad:      adapter-normalized total load across visible items
+ *   - itemWeight:    compatibility alias for itemLoad
+ *   - coinSum:       sum of native currency values
+ *   - coinValues:    adapter-native balance snapshot
  *
  * The cache exists primarily for two reasons:
  *
- *   1. Centralization. The weight-extraction logic that handles both
- *      dnd5e v3 scalar and v5 object weight schemas should live in one
- *      place, not be duplicated between the inventory rendering pipeline
- *      and the future "can this fit?" check used by drag-drop.
+ *   1. Centralization. System-specific load extraction belongs to adapters,
+ *      not the inventory rendering or drag/drop layers.
  *
  *   2. Read amortization. Drag-drop and capacity-check operations need
  *      to query total weight without forcing a full re-render. The cache
@@ -31,8 +30,9 @@
  */
 
 import { MODULE_ID, FLAGS } from "./constants.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
 
-const _cache = new Map(); // actorId -> { itemWeight, coinSum, coinValues }
+const _cache = new Map();
 
 // ============================================================
 // Public read API
@@ -43,7 +43,8 @@ const _cache = new Map(); // actorId -> { itemWeight, coinSum, coinValues }
  * access, returns the cached value on subsequent calls until invalidation.
  *
  * @param {Actor} actor
- * @returns {{ itemWeight: number, coinSum: number, coinValues: Object } | null}
+ * @returns {{ itemLoad: number, itemWeight: number, loadSupported: boolean,
+ *   loadUnit: Object|null, coinSum: number, coinValues: Object } | null}
  */
 export function getRawTotals(actor) {
   if (!actor?.id) return null;
@@ -64,7 +65,8 @@ export function getRawTotals(actor) {
  * Used by tests and by future "verify cache integrity" diagnostics.
  *
  * @param {Actor} actor
- * @returns {{ itemWeight: number, coinSum: number, coinValues: Object } | null}
+ * @returns {{ itemLoad: number, itemWeight: number, loadSupported: boolean,
+ *   loadUnit: Object|null, coinSum: number, coinValues: Object } | null}
  */
 export function recomputeTotals(actor) {
   if (!actor?.id) return null;
@@ -145,9 +147,9 @@ export function registerWeightCacheHooks() {
     if (parentId) invalidateActor(parentId);
   });
   Hooks.on("updateActor", (actor, changes) => {
-    if (changes?.system?.currency !== undefined) {
-      invalidateActor(actor.id);
-    }
+    // Native currency may be stored anywhere in a system schema. Invalidating
+    // on all Actor updates is intentionally conservative and remains O(1).
+    if (changes && actor?.id) invalidateActor(actor.id);
   });
 }
 
@@ -156,40 +158,53 @@ export function registerWeightCacheHooks() {
 // ============================================================
 
 function computeRawTotals(actor) {
-  const itemWeight = computeItemWeight(actor);
+  const adapter = getActiveSystemAdapter();
+  const itemLoad = computeItemLoad(actor, adapter);
   const { coinSum, coinValues } = computeCurrencyTotals(actor);
-  return { itemWeight, coinSum, coinValues };
+  return {
+    itemLoad,
+    // v0.1 compatibility for callers and console diagnostics.
+    itemWeight: itemLoad,
+    loadSupported: adapter.capabilities.load === true,
+    loadUnit: adapter.loadUnit ?? null,
+    coinSum,
+    coinValues
+  };
 }
 
-function computeItemWeight(actor) {
+function computeItemLoad(actor, adapter) {
+  if (adapter.capabilities.load !== true) return 0;
   if (!actor?.items) return 0;
-  let total = 0;
+  const items = [];
   for (const item of actor.items) {
     if (item.getFlag?.(MODULE_ID, FLAGS.HIDDEN) === true) continue;
-    const w = extractItemWeight(item);
-    const qty = item.system?.quantity ?? 1;
-    total += w * qty;
+    if (adapter.isNativeCurrencyItem(item)) continue;
+    items.push(item);
   }
-  return total;
-}
-
-function extractItemWeight(item) {
-  const w = item?.system?.weight;
-  if (typeof w === "number") return w;
-  if (w !== null && typeof w === "object") return w.value ?? 0;
-  return 0;
+  try {
+    const total = Number(adapter.computeItemLoad(actor, { items }));
+    return Number.isFinite(total) && total >= 0
+      ? Math.round((total + Number.EPSILON) * 100) / 100
+      : 0;
+  } catch (err) {
+    console.warn("Quartermaster | Could not compute Actor Item load", actor?.uuid ?? actor?.id, err);
+    return 0;
+  }
 }
 
 function computeCurrencyTotals(actor) {
-  const c = actor?.system?.currency ?? {};
-  const coinValues = {
-    pp: c.pp ?? 0,
-    gp: c.gp ?? 0,
-    ep: c.ep ?? 0,
-    sp: c.sp ?? 0,
-    cp: c.cp ?? 0
-  };
-  const coinSum =
-    coinValues.pp + coinValues.gp + coinValues.ep + coinValues.sp + coinValues.cp;
+  let currencies = [];
+  try {
+    currencies = getActiveSystemAdapter().listNativeCurrencies(actor);
+  } catch { /* a malformed third-party adapter should not break rendering */ }
+  const coinValues = {};
+  let coinSum = 0;
+  for (const currency of Array.isArray(currencies) ? currencies : []) {
+    const id = typeof currency?.id === "string" ? currency.id : null;
+    const value = Number(currency?.value);
+    if (!id || !Number.isFinite(value) || value < 0) continue;
+    coinValues[id] = value;
+    coinSum += value;
+  }
   return { coinSum, coinValues };
 }

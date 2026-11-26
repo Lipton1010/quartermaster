@@ -5,8 +5,14 @@
  */
 
 import { MODULE_ID, MODULE_TITLE, SETTINGS, CHOICES, HOOKS } from "./constants.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
+import * as TransactionLog from "./transaction-log.js";
 
-export function registerSettings() {
+export function registerSettings(adapter = getActiveSystemAdapter()) {
+  const capacitySupported = adapter.defaultCapacity?.enforced === true;
+  const currencyLoadSupported = adapter.capabilities?.currencyWeight === true;
+  const identificationSupported = adapter.capabilities?.identification === true;
+  const itemValueSupported = adapter.capabilities?.itemValue === true;
   // ============================================================
   // Capacity
   // ============================================================
@@ -15,18 +21,18 @@ export function registerSettings() {
     name: "quartermaster.settings.enforceCapacity.name",
     hint: "quartermaster.settings.enforceCapacity.hint",
     scope: "world",
-    config: true,
+    config: capacitySupported,
     type: Boolean,
-    default: true
+    default: capacitySupported
   });
 
   game.settings.register(MODULE_ID, SETTINGS.CAPACITY_LIMIT, {
     name: "quartermaster.settings.capacityLimit.name",
     hint: "quartermaster.settings.capacityLimit.hint",
     scope: "world",
-    config: true,
+    config: capacitySupported,
     type: Number,
-    default: 500,
+    default: adapter.defaultCapacity?.limit ?? 0,
     range: { min: 0, max: 10000, step: 10 }
   });
 
@@ -34,7 +40,7 @@ export function registerSettings() {
     name: "quartermaster.settings.applyCurrencyWeight.name",
     hint: "quartermaster.settings.applyCurrencyWeight.hint",
     scope: "world",
-    config: true,
+    config: currencyLoadSupported,
     type: Boolean,
     default: false
   });
@@ -125,7 +131,7 @@ export function registerSettings() {
     name: "quartermaster.settings.unidentifiedDisplay.name",
     hint: "quartermaster.settings.unidentifiedDisplay.hint",
     scope: "world",
-    config: true,
+    config: identificationSupported,
     type: String,
     default: CHOICES.UNIDENTIFIED_DISPLAY.UNIDENTIFIED,
     choices: {
@@ -165,7 +171,7 @@ export function registerSettings() {
     name: "quartermaster.settings.hidePricesFromPlayers.name",
     hint: "quartermaster.settings.hidePricesFromPlayers.hint",
     scope: "world",
-    config: true,
+    config: itemValueSupported,
     type: Boolean,
     default: false,
     onChange: () => {
@@ -266,6 +272,14 @@ export function registerSettings() {
     choices: {
       [CHOICES.LOG_VISIBILITY.ALL]: "quartermaster.choices.logVisibility.all",
       [CHOICES.LOG_VISIBILITY.GM_ONLY]: "quartermaster.choices.logVisibility.gmOnly"
+    },
+    onChange: async () => {
+      if (!game.user?.isGM) return;
+      try {
+        await TransactionLog.refreshPublicProjection();
+      } catch (error) {
+        console.error(`${MODULE_TITLE} | Could not refresh the public transaction-log projection`, error);
+      }
     }
   });
 
@@ -291,6 +305,26 @@ export function registerSettings() {
     type: Number,
     default: 5000,
     range: { min: 100, max: 50000, step: 100 }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.MUTATION_RATE_LIMIT_MAX, {
+    name: "quartermaster.settings.mutationRateLimitMax.name",
+    hint: "quartermaster.settings.mutationRateLimitMax.hint",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 30,
+    range: { min: 0, max: 200, step: 1 }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.MUTATION_RATE_LIMIT_WINDOW_MS, {
+    name: "quartermaster.settings.mutationRateLimitWindowMs.name",
+    hint: "quartermaster.settings.mutationRateLimitWindowMs.hint",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 10000,
+    range: { min: 1000, max: 120000, step: 1000 }
   });
 
   game.settings.register(MODULE_ID, SETTINGS.UI_REFRESH_DEBOUNCE_MS, {
@@ -352,6 +386,24 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, SETTINGS.BACKING_ACTOR_ID, {
     name: "Backing Actor ID (internal)",
     hint: "Stored automatically. Do not edit manually.",
+    scope: "world",
+    config: false,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.STAGING_ACTOR_ID, {
+    name: "Staging Actor ID (internal)",
+    hint: "Stored automatically. Do not edit manually.",
+    scope: "world",
+    config: false,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.VAULT_ACTOR_TYPE, {
+    name: "Vault Actor Type (internal)",
+    hint: "Selected automatically by the active system adapter or confirmed by the GM.",
     scope: "world",
     config: false,
     type: String,

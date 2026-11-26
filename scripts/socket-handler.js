@@ -9,10 +9,10 @@
  * client, which validates identity from the connection context, dispatches
  * through the operation coordinator, and returns a result envelope.
  *
- * Transport mechanisms:
- *   - Primary:  CONFIG.queries (Foundry V13+; built-in request/response with
- *               authoritative sender identity)
- *   - Fallback: raw game.socket.emit with manual correlation (older clients)
+ * Player mutations use CONFIG.queries (Foundry V13+) exclusively because its
+ * handler receives authoritative sender identity. If authenticated queries
+ * are unavailable the request fails closed. Active-GM operations still
+ * dispatch locally.
  *
  * For step 4, the per-operation-type fn bodies are placeholder stubs that
  * return `{ status: "success", resultData: { notImplemented: true, ... } }`.
@@ -22,11 +22,22 @@
  * steps 7 through 13.
  */
 
-import { MODULE_ID, MODULE_TITLE } from "./constants.js";
+import { MODULE_ID, MODULE_TITLE, FLAGS } from "./constants.js";
 import { executeOperation } from "./operation-coordinator.js";
 import { needsApproval } from "./approval-policy.js";
 import { promptCurrencyApproval } from "./approval-dialog.js";
 import { getCurrency, applyCurrencyDelta } from "./currencies.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
+import {
+  authorizeTransfer,
+  resolveTransferDocuments
+} from "./transfer-authorization.js";
+import { consumeMutationSlot } from "./mutation-rate-limit.js";
+import {
+  installQuerySenderCapture,
+  resolveAuthenticatedQuerySender,
+  takeSocketQuerySender
+} from "./query-sender.js";
 
 const QUERY_NAME = "quartermaster.processRequest";
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -40,7 +51,6 @@ export const PAYLOAD_TYPES = {
 
 let _registered = false;
 let _queryRegistered = false;
-let _pendingResults = new Map();  // requestId -> { resolve, reject, timeout }
 
 // ============================================================
 // Registration
@@ -55,11 +65,10 @@ export function registerSocketHandler() {
   _registered = true;
 
   registerQueryHandler();
-  registerSocketListener();
 
   console.log(
     `${MODULE_TITLE} | Socket handler registered ` +
-    `(query: ${_queryRegistered ? "yes" : "no"}, socket: yes)`
+    `(authenticated query: ${_queryRegistered ? "yes" : "no"})`
   );
 }
 
@@ -67,69 +76,30 @@ function registerQueryHandler() {
   if (typeof CONFIG !== "object" || !CONFIG.queries) {
     console.warn(
       `${MODULE_TITLE} | CONFIG.queries not available; ` +
-      `falling back to raw socket only`
+      `player mutations will fail closed`
     );
     return;
   }
   CONFIG.queries[QUERY_NAME] = async (data, options = {}) => {
-    // Foundry v14 supplies the authenticated User in options.user.
-    // Keep the existing fallbacks for older query contexts.
-    const senderUserId = options.user?.id ?? options.userId ?? game.user.id;
+    const socketSenderId = takeSocketQuerySender();
+    if (!isActiveGM()) {
+      return { status: "failed", error: "not-active-gm" };
+    }
+    // Never infer a sender from the payload. v14 supplies `options.user`;
+    // v13.351 omits it and must use the server-authenticated `userQuery` id.
+    const authenticatedUser = options.user ?? null;
+    const senderUserId = resolveAuthenticatedQuerySender(options, socketSenderId);
+    if (typeof senderUserId !== "string" || !senderUserId) {
+      return { status: "failed", error: "unauthenticated-query" };
+    }
+    const registeredUser = game.users.get(senderUserId);
+    if (!registeredUser || (authenticatedUser && registeredUser !== authenticatedUser)) {
+      return { status: "failed", error: "unauthenticated-query" };
+    }
     return await dispatchPayload(data, senderUserId);
   };
+  if (game.release?.generation === 13) installQuerySenderCapture(QUERY_NAME);
   _queryRegistered = true;
-}
-
-function registerSocketListener() {
-  game.socket.on(SOCKET_CHANNEL, handleRawSocketMessage);
-}
-
-// ============================================================
-// Receive side: raw socket fallback path
-// ============================================================
-
-/**
- * Handle a raw socket message (used when CONFIG.queries is unavailable
- * or for the REQUEST_RESULT correlation path).
- */
-async function handleRawSocketMessage(payload) {
-  if (!payload || typeof payload !== "object") return;
-
-  // Result correlation: the active GM has broadcast a result for a
-  // pending request we initiated.
-  if (payload.type === PAYLOAD_TYPES.REQUEST_RESULT) {
-    handleIncomingResult(payload);
-    return;
-  }
-
-  // Request path: only the active GM processes
-  if (!isActiveGM()) return;
-
-  // Raw socket doesn't give us authoritative sender identity; we trust
-  // payload.userId here. The CONFIG.queries path is preferred precisely
-  // because it provides authoritative identity.
-  const senderUserId = payload.userId;
-  const result = await dispatchPayload(payload, senderUserId);
-
-  // Broadcast result back; the originator will correlate by requestId
-  game.socket.emit(SOCKET_CHANNEL, {
-    type: PAYLOAD_TYPES.REQUEST_RESULT,
-    requestId: payload.requestId,
-    targetUserId: senderUserId,
-    result
-  });
-}
-
-function handleIncomingResult(message) {
-  // Only relevant if WE were the originator awaiting this result
-  if (message.targetUserId && message.targetUserId !== game.user.id) return;
-
-  const pending = _pendingResults.get(message.requestId);
-  if (!pending) return;
-
-  clearTimeout(pending.timeout);
-  _pendingResults.delete(message.requestId);
-  pending.resolve(message.result);
 }
 
 // ============================================================
@@ -141,8 +111,7 @@ function handleIncomingResult(message) {
  * current user is the active GM or a player.
  *
  *   - Active GM:    dispatches locally (no network round-trip)
- *   - Other client: queries the active GM via CONFIG.queries, with raw
- *                   socket fallback if queries are unavailable
+ *   - Other client: queries the active GM via CONFIG.queries or fails closed
  *
  * @param {Object} payload  full payload object including type, requestId, etc.
  * @returns {Promise<Object>}  result envelope
@@ -152,8 +121,13 @@ export async function submitRequest(payload) {
     return { status: "failed", error: "malformed-payload" };
   }
 
-  // Auto-populate timestamp if missing
-  if (!payload.timestamp) payload.timestamp = Date.now();
+  // Preserve caller-supplied values so the GM can reject malformed timestamps
+  // instead of silently laundering null, NaN, or another falsy value. Older
+  // callers which omit the field still receive a timestamp on first submit;
+  // retrying the same payload object retains that exact authenticated binding.
+  if (!Object.prototype.hasOwnProperty.call(payload, "timestamp")) {
+    payload.timestamp = Date.now();
+  }
 
   // Auto-populate userId if missing (informational only; ignored on receive)
   if (!payload.userId) payload.userId = game.user.id;
@@ -178,20 +152,7 @@ export async function submitRequest(payload) {
     }
   }
 
-  // Raw socket fallback (await result via correlation)
-  return await sendViaRawSocket(payload);
-}
-
-function sendViaRawSocket(payload, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      _pendingResults.delete(payload.requestId);
-      resolve({ status: "failed", error: "socket-timeout" });
-    }, timeoutMs);
-
-    _pendingResults.set(payload.requestId, { resolve, reject, timeout });
-    game.socket.emit(SOCKET_CHANNEL, payload);
-  });
+  return { status: "failed", error: "authenticated-query-unavailable" };
 }
 
 // ============================================================
@@ -226,6 +187,17 @@ async function dispatchPayload(payload, senderUserId) {
     return { status: "failed", error: "unknown-sender" };
   }
 
+  const isMutationType =
+    payload.type === PAYLOAD_TYPES.ITEM_TRANSFER ||
+    payload.type === PAYLOAD_TYPES.CURRENCY_CHANGE ||
+    payload.type === PAYLOAD_TYPES.CUSTOM_RESOURCE_CHANGE;
+  if (isMutationType) {
+    const limit = consumeMutationSlot(senderUserId);
+    if (!limit.allowed) {
+      return { status: "failed", ok: false, error: limit.error ?? "rate-limited" };
+    }
+  }
+
   switch (payload.type) {
     case PAYLOAD_TYPES.ITEM_TRANSFER:
       return await dispatchItemTransfer(payload, senderUserId);
@@ -255,10 +227,17 @@ async function dispatchItemTransfer(envelope, senderUserId) {
   if (!["ingress", "egress"].includes(action)) return { status: "failed", error: "unknown-action", action };
 
   // Resource keys: the item itself, plus any actors involved
-  const itemKey = payload.sourceItemId ?? payload.itemId ?? "unknown";
-  const resourceKeys = [`item:${itemKey}`];
-  if (payload.destActorId) resourceKeys.push(`actor:${payload.destActorId}`);
-  if (payload.sourceActorId) resourceKeys.push(`actor:${payload.sourceActorId}`);
+  const itemKey = payload.sourceItemUuid ?? payload.sourceItemId ?? payload.itemId ?? "unknown";
+  // Legacy IDs and UUIDs can refer to the same Item while producing different
+  // raw lock keys. Keep the detailed keys for diagnostics, but serialize every
+  // transfer through one canonical gate so aliasing cannot duplicate an Item.
+  const resourceKeys = ["item-transfer-ledger", `item:${itemKey}`];
+  if (payload.destActorUuid || payload.destActorId) {
+    resourceKeys.push(`actor:${payload.destActorUuid ?? payload.destActorId}`);
+  }
+  if (payload.sourceActorUuid || payload.sourceActorId) {
+    resourceKeys.push(`actor:${payload.sourceActorUuid ?? payload.sourceActorId}`);
+  }
   if (payload.targetActorId) resourceKeys.push(`actor:${payload.targetActorId}`);
 
   return await executeOperation({
@@ -267,6 +246,11 @@ async function dispatchItemTransfer(envelope, senderUserId) {
     operationType: `itemTransfer:${action}`,
     requester: senderUserId,
     timestamp,
+    requestData: {
+      type: envelope.type,
+      action,
+      payload
+    },
     fn: async () => stubItemTransfer(action, payload, { requestId, userId: senderUserId })
   });
 }
@@ -282,6 +266,16 @@ async function dispatchCurrencyChange(envelope, senderUserId) {
     return { status: "failed", error: "invalid-delta" };
   }
 
+  // Approval is its own durable phase. It may wait indefinitely for a GM, so
+  // it must never hold the shared currency mutation lock. The derived request
+  // is replay-protected: retries reuse the recorded decision without opening
+  // duplicate dialogs, then continue to the original mutation request.
+  const approval = await coordinateCurrencyApproval(envelope, senderUserId);
+  if (approval.status !== "success") return approval;
+  const mutationTimestamp = Number.isFinite(approval.resultData?.approvedAt)
+    ? approval.resultData.approvedAt
+    : timestamp;
+
   // Custom balances share one flag object, so serialize all currency writes.
   const resourceKeys = ["currency-ledger"];
 
@@ -290,8 +284,44 @@ async function dispatchCurrencyChange(envelope, senderUserId) {
     requestId,
     operationType: "currencyChange",
     requester: senderUserId,
+    timestamp: mutationTimestamp,
+    requestData: {
+      type: envelope.type,
+      payload
+    },
+    fn: async () => stubCurrencyChange(payload, {
+      requestId,
+      userId: senderUserId,
+      approvalResolved: true
+    })
+  });
+}
+
+async function coordinateCurrencyApproval(envelope, senderUserId) {
+  const { requestId, payload, timestamp } = envelope;
+  const preflight = await inspectCurrencyApproval(payload, {
+    requestId,
+    userId: senderUserId,
+    prompt: false
+  });
+  if (preflight.status !== "approval-required") return preflight;
+
+  return executeOperation({
+    resourceKeys: [`currency-approval:${requestId}`],
+    requestId: `approval:${requestId}`,
+    operationType: "currencyApproval",
+    requester: senderUserId,
     timestamp,
-    fn: async () => stubCurrencyChange(payload, { requestId, userId: senderUserId })
+    requestData: {
+      type: "quartermaster.currencyApproval",
+      originalType: envelope.type,
+      payload
+    },
+    fn: async () => inspectCurrencyApproval(payload, {
+      requestId,
+      userId: senderUserId,
+      prompt: true
+    })
   });
 }
 
@@ -306,7 +336,10 @@ async function dispatchCustomResourceChange(envelope, senderUserId) {
     return { status: "failed", error: "invalid-delta" };
   }
 
-  const resourceKeys = [`customResource:${payload.resourceId}`];
+  // Every custom resource is stored in one Actor flag array. Different IDs
+  // must therefore share one coordinator key or concurrent read/modify/write
+  // operations can overwrite each other.
+  const resourceKeys = ["custom-resource-ledger"];
 
   return await executeOperation({
     resourceKeys,
@@ -314,6 +347,10 @@ async function dispatchCustomResourceChange(envelope, senderUserId) {
     operationType: "customResourceChange",
     requester: senderUserId,
     timestamp,
+    requestData: {
+      type: envelope.type,
+      payload
+    },
     fn: async () => stubCustomResourceChange(payload, { requestId, userId: senderUserId })
   });
 }
@@ -342,7 +379,6 @@ async function stubItemTransfer(action, data, context) {
  * @returns {Promise<Object>}
  */
 async function realItemTransfer(action, data, context) {
-  const { sourceActorId, sourceItemId, sourceItemUuid, destActorId } = data;
   const { requestId, userId } = context ?? {};
 
   // Dynamic import to avoid circular dependencies (claim-commit imports
@@ -350,38 +386,34 @@ async function realItemTransfer(action, data, context) {
   // keep the dependency graph clean)
   const { performIngress, performEgress } = await import("./claim-commit.js");
 
-  // Resolve actors
-  const sourceActor = game.actors.get(sourceActorId);
-  if (!sourceActor) {
-    return { status: "failed", error: "source-actor-not-found", sourceActorId };
-  }
-  const destActor = game.actors.get(destActorId);
-  if (!destActor) {
-    return { status: "failed", error: "destination-actor-not-found", destActorId };
-  }
+  const resolved = await resolveTransferDocuments(data);
+  if (!resolved.ok) return { status: "failed", ...resolved };
+  const { sourceActor, sourceItem, destActor } = resolved;
 
-  // Resolve source item: prefer by-id on the parent actor (fast and
-  // guarantees the actor relationship), fall back to UUID
-  let sourceItem = sourceItemId ? sourceActor.items.get(sourceItemId) : null;
-  if (!sourceItem && sourceItemUuid) {
-    sourceItem = await fromUuid(sourceItemUuid);
-  }
-  if (!sourceItem) {
-    return {
-      status: "failed",
-      error: "source-item-not-found",
-      sourceItemId,
-      sourceItemUuid
-    };
-  }
+  const sender = game.users.get(userId);
+  if (!sender) return { status: "failed", error: "unknown-sender" };
 
-  // Sanity: item is actually on the named source actor (could be stale UUID)
-  if (sourceItem.parent?.id !== sourceActor.id) {
-    return {
-      status: "failed",
-      error: "source-item-not-on-source-actor",
-      sourceItemActualParent: sourceItem.parent?.id ?? null
-    };
+  const BackingActors = await import("./backing-actor.js");
+  const backingActor = BackingActors.getBackingActor?.() ?? null;
+  const stagingActor = BackingActors.getStagingActor?.()
+    ?? game.actors.find(actor => actor.getFlag?.(MODULE_ID, FLAGS.STAGING_ACTOR_MARKER))
+    ?? null;
+  const adapter = getActiveSystemAdapter();
+  const authorization = authorizeTransfer({
+    action,
+    sender,
+    sourceActor,
+    sourceItem,
+    destActor,
+    backingActor,
+    stagingActor,
+    adapter
+  });
+  if (!authorization.ok) {
+    console.warn(
+      `${MODULE_TITLE} | denied ${action} transfer from ${sender.id}: ${authorization.error}`
+    );
+    return { status: "failed", ...authorization };
   }
 
   try {
@@ -416,8 +448,8 @@ async function stubCurrencyChange(data, context) {
 
 /**
  * Real currency change implementation (step 10). Validates the request,
- * checks for negative-balance, writes claim/commit transaction log
- * entries, and updates the backing actor's `system.currency.<type>`.
+ * checks for negative-balance, writes claim/commit transaction log entries,
+ * and applies the balance through the active system adapter/currency facade.
  *
  * Step 13 added the approval gate: player-initiated requests may need
  * GM approval before mutation. GM-initiated requests auto-approve.
@@ -432,7 +464,7 @@ async function stubCurrencyChange(data, context) {
  */
 export async function realCurrencyChange(data, context) {
   const { currencyType, delta, reason } = data;
-  const { requestId, userId } = context ?? {};
+  const { requestId, userId, approvalResolved = false } = context ?? {};
 
   const backingActor = (await import("./backing-actor.js")).getBackingActor();
   if (!backingActor) {
@@ -467,49 +499,15 @@ export async function realCurrencyChange(data, context) {
     };
   }
 
-  // Approval gate (step 13). Runs on the GM-side, before any mutation.
-  // GMs auto-approve their own requests; players hit the configured policy.
-  const referenceValue = currency.referenceRate == null
-    ? 0
-    : Math.abs(delta * currency.referenceRate);
-  if (needsApproval({ userId, delta, referenceValue })) {
-    const decision = await promptCurrencyApproval({
+  if (!approvalResolved) {
+    const approval = await inspectCurrencyApproval(data, {
       requestId,
       userId,
-      currencyType,
-      currencyName: currency.name,
-      currencySymbol: currency.symbol,
-      delta,
-      currentBalance: currentValue,
-      reason
+      prompt: true,
+      backingActor,
+      currency
     });
-
-    if (decision !== "approve") {
-      // Write denial entry so the log captures what was attempted
-      const TransactionLog = await import("./transaction-log.js");
-      await TransactionLog.writeEntry({
-        type: "currency.denied",
-        requestId,
-        userId,
-        timestamp: Date.now(),
-        currencyType,
-        currencyName: currency.name,
-        currencySymbol: currency.symbol,
-        delta,
-        reason: reason ?? "",
-        previousValue: currentValue,
-        denialReason: decision  // "deny" or "timeout"
-      });
-
-      return {
-        status: "denied",
-        error: decision === "timeout" ? "approval-timeout" : "denied-by-gm",
-        denialReason: decision,
-        currencyType,
-        delta
-      };
-    }
-    // Decision is "approve"; fall through to execute
+    if (approval.status !== "success") return approval;
   }
 
   const newValue = currentValue + delta;
@@ -542,40 +540,8 @@ export async function realCurrencyChange(data, context) {
     previousValue: currentValue
   });
 
-  // Phase 2: Commit — apply the update, then log the outcome
-  try {
-    const applied = await applyCurrencyDelta(currencyType, delta, backingActor);
-    if (applied.status !== "success") {
-      throw new Error(applied.error ?? "currency-update-failed");
-    }
-    const committedValue = applied.newValue;
-
-    await TransactionLog.writeEntry({
-      requestId,
-      userId,
-      timestamp: Date.now(),
-      type: "currency.commit",
-      currencyType,
-      currencyName: currency.name,
-      currencySymbol: currency.symbol,
-      delta,
-      previousValue: currentValue,
-      newValue: committedValue
-    });
-
-    return {
-      status: "success",
-      resultData: {
-        currencyType,
-        currencyName: currency.name,
-        currencySymbol: currency.symbol,
-        delta,
-        previousValue: currentValue,
-        newValue: committedValue,
-        reason: reason ?? null
-      }
-    };
-  } catch (err) {
+  const applied = await applyCurrencyDelta(currencyType, delta, backingActor);
+  if (applied.status !== "success") {
     await TransactionLog.writeEntry({
       requestId,
       userId,
@@ -585,14 +551,131 @@ export async function realCurrencyChange(data, context) {
       currencyName: currency.name,
       currencySymbol: currency.symbol,
       delta,
-      error: err?.message ?? String(err)
+      error: applied.error,
+      observedValue: applied.observedValue
     });
+    return applied;
+  }
 
+  return finalizeBalanceCommit({
+    requestId,
+    userId,
+    type: "currency.commit",
+    currencyType,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
+    delta,
+    previousValue: applied.previousValue,
+    newValue: applied.newValue
+  }, {
+    status: "success",
+    resultData: {
+      currencyType,
+      currencyName: currency.name,
+      currencySymbol: currency.symbol,
+      delta,
+      previousValue: applied.previousValue,
+      newValue: applied.newValue,
+      reason: reason ?? null
+    }
+  });
+}
+
+async function finalizeBalanceCommit(entry, result) {
+  const TransactionLog = await import("./transaction-log.js");
+  try {
+    if (!await TransactionLog.writeEntry(entry)) throw new Error("commit-log-unavailable");
+    return result;
+  } catch (error) {
+    const finalizationWarning = String(error?.message ?? error);
+    let finalizationRecoveryRecorded = false;
+    try {
+      const { writeRecoveryRecord } = await import("./recovery-records.js");
+      finalizationRecoveryRecorded = Boolean(await writeRecoveryRecord({
+        ...entry,
+        type: `${entry.type}.finalization-failed`,
+        status: "mutation-complete-audit-incomplete",
+        error: finalizationWarning
+      }));
+    } catch (recoveryError) {
+      console.error(`${MODULE_TITLE} | balance finalization recovery log failed`, recoveryError);
+    }
+    // The coordinator must persist the committed result even if neither log
+    // can be written. A terminal failure would invite another balance change.
+    console.error(`${MODULE_TITLE} | balance changed but commit logging failed`, error);
     return {
-      status: "failed",
-      error: err?.message ?? "currency-update-exception"
+      ...result,
+      resultData: { ...result.resultData, finalizationWarning, finalizationRecoveryRecorded }
     };
   }
+}
+
+async function inspectCurrencyApproval(data, {
+  requestId,
+  userId,
+  prompt = false,
+  backingActor = null,
+  currency = null
+} = {}) {
+  const { currencyType, delta, reason } = data ?? {};
+  backingActor ??= (await import("./backing-actor.js")).getBackingActor();
+  if (!backingActor) return { status: "failed", error: "no-backing-actor" };
+  currency ??= getCurrency(currencyType, backingActor);
+  if (!currency) return { status: "failed", error: "invalid-currency-type", currencyType };
+  if (typeof delta !== "number" || !Number.isFinite(delta)) {
+    return { status: "failed", error: "invalid-delta", delta };
+  }
+  if (delta === 0) return { status: "success", approvalRequired: false };
+
+  const referenceValue = currency.referenceRate == null
+    ? 0
+    : Math.abs(delta * currency.referenceRate);
+  if (!needsApproval({ userId, delta, referenceValue })) {
+    return { status: "success", approvalRequired: false };
+  }
+  if (!prompt) return { status: "approval-required" };
+
+  const currentValue = currency.value ?? 0;
+  const decision = await promptCurrencyApproval({
+    requestId,
+    userId,
+    currencyType,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
+    delta,
+    currentBalance: currentValue,
+    reason
+  });
+  if (decision === "approve") {
+    return {
+      status: "success",
+      approvalRequired: true,
+      approved: true,
+      resultData: { approvedAt: Date.now() }
+    };
+  }
+
+  const TransactionLog = await import("./transaction-log.js");
+  await TransactionLog.writeEntry({
+    type: "currency.denied",
+    requestId,
+    userId,
+    timestamp: Date.now(),
+    currencyType,
+    currencyName: currency.name,
+    currencySymbol: currency.symbol,
+    delta,
+    reason: reason ?? "",
+    previousValue: currentValue,
+    denialReason: decision
+  });
+  return {
+    status: "denied",
+    error: decision === "timeout" ? "approval-timeout" : "denied-by-gm",
+    denialReason: decision,
+    currencyType,
+    delta
+  };
 }
 
 async function stubCustomResourceChange(data, context) {
@@ -663,7 +746,7 @@ async function realResourceChange(data, context) {
 
   // Phase 3: Commit or fail log entry
   if (result.status === "success") {
-    await TransactionLog.writeEntry({
+    return finalizeBalanceCommit({
       type: "resource.commit",
       requestId,
       userId,
@@ -673,7 +756,7 @@ async function realResourceChange(data, context) {
       delta,
       previousValue: result.resultData.previousValue,
       newValue: result.resultData.newValue
-    });
+    }, result);
   } else {
     await TransactionLog.writeEntry({
       type: "resource.failed",
@@ -710,8 +793,9 @@ export function diagnostics() {
     registered: _registered,
     queryRegistered: _queryRegistered,
     socketChannel: SOCKET_CHANNEL,
+    rawSocketEnabled: false,
     queryName: QUERY_NAME,
-    pendingResultsAwaitingReply: _pendingResults.size,
+    pendingResultsAwaitingReply: 0,
     weAreActiveGM: isActiveGM(),
     activeGMId: game.users.activeGM?.id ?? null,
     activeGMName: game.users.activeGM?.name ?? null

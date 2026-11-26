@@ -1,0 +1,42 @@
+name: Build reviewed Quartermaster release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing reviewed version tag (for example v1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Validate reviewed tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: test "$RELEASE_TAG" = "v$(node -p "JSON.parse(require('fs').readFileSync('module.json','utf8')).version")"
+      - run: npm run package
+      - name: Create GitHub release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: >-
+          gh release create "$RELEASE_TAG"
+          ../../artifacts/system-agnostic/module.json
+          ../../artifacts/system-agnostic/module.zip
+          ../../artifacts/system-agnostic/module.zip.sha256
+          ../../artifacts/system-agnostic/module.zip.contents.txt
+          --generate-notes --verify-tag

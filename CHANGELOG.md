@@ -5,12 +5,97 @@ All notable changes to Quartermaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> Build steps referenced in early entries are development-time milestones. Build steps 1â€“18 all shipped in v0.1.0; subsequent work is tracked by version going forward.
+> Build steps referenced in early entries are development-time milestones. Build steps 1–18 all shipped in v0.1.0; subsequent work is tracked by version going forward.
 
 
 ## [Unreleased]
 
-_(Entries land here as work progresses; promoted to a dated version section on release.)_
+_(Merge, installation, tagging, and publication remain gated on review of the migration and compatibility evidence.)_
+
+### Changed
+- Use native Foundry dialogs and context menus for Loot Prep, preferences, resource/currency editing, inventory actions, and compendium import actions.
+- Share JSON persistence comparison logic and use native HTML escaping and array reverse searches.
+
+### Fixed
+- Resume an interrupted vault upgrade after either private metadata flag has been cleared. Verify ordered Item fields and third-party flags exactly, and preserve the origins of self-referencing Active Effects when moving between storage actors.
+- Return committed Item creations as successful when a hook or transaction log fails after the write. Attempt to record logging failures on the private staging actor.
+- Convert D&D item load to pounds using the system's unit definitions. Apply the destination actor's preparation defaults to transferred ordinarily prepared spells.
+- Preserve same-actor D&D container links during migration. Check linked items before moving them between actors.
+- Report failed checks and invalid or empty results from in-world development suites.
+- Serialize Item transfers with GM hide, reveal, and delete operations to prevent duplicate copies during concurrent actions.
+- Verify native and custom currency balances after every write. Cancelled reveals retain their staged funds; partial writes retain recovery information and block unsafe retries.
+- Recover Item creation that commits before reporting an error, including compensation and recovery records when source deletion fails.
+- Preserve successful currency and resource changes when commit logging fails, and retain their results for safe request replay.
+
+
+## [1.0.0] - Unreleased
+
+### Added
+- Add a versioned system-adapter registry with built-in generic, D&D 5e, and PF2e adapters and a public registration API.
+- Add normalized Item metadata, recipient compatibility, transfer preparation, load formatting, and native-currency capabilities behind adapters.
+- Add a generic fallback with one editable `Currency` (`CUR`) balance and graceful omission of unsupported metadata.
+- Add native PF2e loot Actor, coin, quantity, Bulk, value, identification, and coin-item handling.
+- Add a GM-only staging Actor for unrevealed Items, staged currency, folders, notes, canonical logs, and recovery records.
+- Add restartable storage-schema migration and automated adapter, authorization, privacy, migration, manifest, and package-integrity checks.
+- Add a single adapter-aware development test runner and repaired GitHub Actions workflows.
+- Add a capture-phase document `drop` interceptor in `scripts/drag-drop.js` for Quartermaster-marked egress drags, resolving destination Actors via `foundry.applications.instances` and legacy `ui.windows` (required for PF2e `CharacterSheetPF2e` on ApplicationV1).
+- Add a per-user sliding-window mutation rate limiter (`scripts/mutation-rate-limit.js`) with world settings for max requests and window duration.
+- Add `scripts/query-sender.js` to resolve authenticated `CONFIG.queries` sender identity on Foundry v13 from the server-rewritten `userQuery` socket argument.
+
+### Changed
+- Use Actor and Item UUIDs for transfers, including unlinked Token Actors, while accepting permission-checked legacy IDs during v1.
+- Allow players to select any compatible Actor they own, with their assigned Actor retained as the default.
+- Move hidden loot between private staging and the visible shared vault instead of relying on client-side filtering.
+- Preserve D&D 5e native balances and existing 500 lb capacity behavior while routing system data through its adapter.
+- Display PF2e Bulk with initial capacity enforcement disabled.
+- Hide load, price, and identification controls when the active adapter cannot provide accurate values.
+- Remove the D&D-only manifest relationship and use a version-specific v1.0.0 download URL.
+- Remove D&D 5e's native-currency whole-coin restriction (`Number.isInteger(delta)` check, added earlier in this same branch and never shipped) to preserve v0.1.8's decimal-currency compatibility. D&D 5e's currency fields genuinely support fractional values; only PF2e's coin APIs actually require whole units, and that requirement is now expressed per-currency via the adapter-declared `wholeUnitsOnly` flag (see Fixed, below) instead of being hardcoded into the D&D adapter.
+
+### Known limitations
+- PF2e native coin Bulk is separated from the Actor inventory aggregate to avoid double-counting optional currency load. Coin Items inside Bulk-reducing containers can make that separation approximate. PF2e capacity enforcement remains disabled.
+- Mutation rate limiting is in-memory only and does not persist across server reload.
+- Foundry v13 `CONFIG.queries` ack routing can race when multiple Gamemaster clients are connected. Accepted as an operator constraint for 1.0.0: one Gamemaster client per world.
+- PF2e canvas-token drop is not a supported Quartermaster egress path. Give items by dropping on the open character sheet or using Add to Actor.
+- Query-sender identity capture uses LIFO stack ordering when multiple queries overlap.
+- Player privacy for canonical logs and staging data is enforced at the application layer (UI-only); Foundry still syncs full Actor/flag data to connected clients. Accepted for 1.0.0.
+- Custom System Builder first boot on the generic adapter may require setting `quartermaster.vaultActorType=character` when no headed DialogV2 is available (operator note, not a product defect).
+
+### Security
+- Remove the unauthenticated raw-socket mutation fallback and fail closed without Foundry's authenticated query transport.
+- Revalidate sender identity, document ownership, transfer direction, system compatibility, and storage boundaries under GM authority.
+- Create and verify destination Items before deleting sources, compensate failed operations, and retain private recovery data when needed.
+- Redact player-readable transaction projections while retaining the canonical audit log in GM-only storage.
+- On Foundry v13, resolve query sender identity from the server-authenticated `userQuery` connection context only; never trust `payload.userId` or bare `options.userId` (fail closed to `null` when identity cannot be established).
+
+### Migration
+- Introduce integer storage schema version 1 and currency-config version 3.
+- Copy and verify legacy private data before deleting legacy values, and advance the schema marker only after complete success.
+- Preserve legacy D&D native and custom balances, rates, approval settings, resources, visible Items, notes, folders, logs, settings, and shortcut-token data.
+- Scrub `lootPrepNote`/`lootPrepFolder` flags left on already-visible v0.1.8 Items instead of leaving GM notes readable by players; `verifyPrivateStorageCleared` now asserts this.
+- Detect a migrated hidden-currency amount that is fractional for a native currency whose adapter requires whole units, record it on the migration state, and warn the GM instead of leaving it silently unrevealable.
+
+### Fixed
+- Register the storage-Actor deletion guard and Actors-directory suppression at module scope instead of inside the ready-gated runtime hooks, so an unelected GM (or one whose storage failed to initialize) can no longer see or delete either storage Actor.
+- Make a failed staged-currency reveal retryable instead of permanently reusing a stale request id that could hit `request-too-old` or replay a terminal failure forever.
+- Run the currency-approval prompt under its own lock instead of the shared `currency-ledger` lock, so an unanswered approval dialog can no longer stall every currency mutation and staged-currency reveal world-wide.
+- Reject fractional `addHiddenCurrency` amounts for native currencies whose adapter requires whole units (PF2e).
+- Serialize hidden-Item move/delete/stage operations under the storage ledger lock and disable the Loot Prep reveal control while a request is in flight, closing a double-click duplication path.
+- Derive `release.yml`'s version, compatibility minimum, and compatibility-verified values from `module.json` instead of hardcoding them, and move the actual Foundry publish step into a separate, manually authorized `publish-foundry.yml` workflow.
+- Exclude `docs/` from the packaged archive via `.gitattributes`.
+- Broaden `validate-release.mjs`'s system-coupling check to catch a hardcoded `"loot"` Item-type default outside `scripts/system-adapters` (previously missed).
+- Keep `api.ui.openInventory()` and friends available to a GM who is not the active storage GM, per the documented macro surface.
+- Key GM-only inventory and Loot Prep controls off the active storage-GM election instead of raw `user.isGM`, so a non-active GM no longer sees clickable no-op controls.
+- Normalize primitive-only array fields (e.g. a system's Set-backed Item property list) to deduplicated, order-independent content before the migration's per-Item write-verification check, found via live rehearsal against Foundry 14.365/D&D 5e 5.3.3: recreating an Item during migration could benignly round-trip a duplicate entry in such a field, which the exact-array-equality check wrongly treated as corrupted data and aborted the migration on.
+- Filter `undefined`-valued object keys (and convert `undefined` array elements to `null`) before every write-then-verify comparison against a Foundry actor flag, matching real JSON/Foundry persistence semantics. Found via live matrix testing against Pathfinder 2e and Custom System Builder: a raw Item snapshot with even one schema-defined-but-unset field (always true for PF2e's native Treasure/coin Items and every Custom System Builder Item) made every transfer involving that Item fail with `canonical-transaction-log-verification-failed`, since Foundry silently drops such keys on persist but the comparison never accounted for that. Fixed everywhere this write-verification pattern is duplicated: transaction log, storage migration, recovery records, operation coordinator, operation tombstones, and loot-prep folders/notes.
+- Close the Custom System Builder native-sheet egress bypass: a capture-phase document listener gated on Quartermaster drag markers intercepts marked drops before system sheets that override `_onDrop` without calling `dropActorSheetData`, including CSB `CharacterSheetV2` and PF2e `CharacterSheetPF2e` registered only in `ui.windows`.
+
+### Verification
+- On 2026-08-24, committed candidate on `feat/system-agnostic` passed syntax checks, **117/117** headless tests (`npm test`), and the release/system-boundary validator. Coverage includes `query-sender`, `drag-drop` capture interceptor, and `mutation-rate-limit` unit tests.
+- Validated release package built from the committed tree via `npm run package` + `tools/validate-package.mjs`. Evidence (archive, SHA-256, manifest copy, complete file list) is retained beside the archive under `artifacts/system-agnostic/`; see [RELEASE-GATE.md](docs/RELEASE-GATE.md) for the current checksum.
+- All six required live Foundry matrix cells **Passed** on interceptor SHA-256 `51E7246FE2CB008F9FC443B577CE665B2C81866DFEF31BD16B83CAE0A154FDCD` (2026-08-24): Foundry **v14.367** (D&D 5e 5.3.3, PF2e 8.4.0, CSB 6.0.2) and Foundry **v13.351** (D&D 5e 5.3.3, PF2e 7.12.2, CSB 5.2.1). Not every sub-check was re-run on this interceptor in the final session; carried-forward evidence is annotated in [RELEASE-GATE.md](docs/RELEASE-GATE.md).
+- The live v0.1.8-to-v1 migration rehearsal **passed** against a synthetic fixture world. See the [release gate](docs/RELEASE-GATE.md) and [migration report](docs/MIGRATION-REPORT.md) for full evidence.
+- Version 1.0.0 remains **unreleased**. Merge, installation, tagging, and publication have **not** been authorized.
 
 
 ## [0.1.15] - 2026-11-20
@@ -164,16 +249,16 @@ _(Entries land here as work progresses; promoted to a dated version section on r
 - Filter hidden loot staging and deletion entries out of player transaction log views while preserving GM audit visibility.
 - Record a GM-only staging log entry when a visible Shared Party Inventory item is moved back into GM Loot Prep.
 
-## [0.1.2] â€” 2026-05-24
+## [0.1.2] — 2026-05-24
 
 Major feature update.
 
 ### Added
-- **Loot Prep Folders** â€” organize hidden loot by encounter or location
-- **Currency Loot staging** â€” stage GP/SP/CP entries in Loot Prep, reveal to merge into vault
-- **Compendium integration** â€” drag or right-click compendium items to import
+- **Loot Prep Folders** — organize hidden loot by encounter or location
+- **Currency Loot staging** — stage GP/SP/CP entries in Loot Prep, reveal to merge into vault
+- **Compendium integration** — drag or right-click compendium items to import
 - Create Item button in inventory header
-- Sort-by dropdown in items header (Aâ€“Z, By Type with headers, Loot First, Manual)
+- Sort-by dropdown in items header (A–Z, By Type with headers, Loot First, Manual)
 - Manual drag-to-reorder sorting
 - Double-click items to open their sheet
 - Drag from Loot Prep to inventory or character sheets to reveal
@@ -191,17 +276,17 @@ Major feature update.
 - No duplicate items when dragging within Loot Prep
 
 ### Compatibility
-- Foundry VTT v13â€“v14.363
+- Foundry VTT v13–v14.363
 - dnd5e 5.0.0+
 
 
-## [0.1.1] â€” 2026-05-19
+## [0.1.1] — 2026-05-19
 
 ### Changed
 - Release metadata cleanup: tagged as a proper release rather than a GitHub pre-release. No functional code changes from 0.1.0.
 
 
-## [0.1.0] â€” 2026-05-18
+## [0.1.0] — 2026-05-18
 
 Initial public release. Core feature set complete through build step 18.
 
@@ -216,7 +301,7 @@ Initial public release. Core feature set complete through build step 18.
   - `scripts/compendium-menu.js`: `registerCompendiumContextMenu()` hooks into `getCompendiumEntryContext`
   - `scripts/test-step18.js` test harness
 
-### Changed (BREAKING â€” pre-release)
+### Changed (BREAKING — pre-release)
 - **Settings scope migration (build step 17):** `sortOrder`, `defaultEntrySize`, and `hideZeroBalances` changed from `scope: "world"` to `scope: "client"`. Each user now has their own value. Pre-existing off-default values will reset to the registered defaults.
 
 ### Added
@@ -235,17 +320,17 @@ Initial public release. Core feature set complete through build step 18.
   - GM-only hide / trash buttons appear on item row hover in the Shared Party Inventory
   - Right-click context menu on inventory item rows: "Hide (send to Loot Prep)" and "Delete Item"
   - Both button and context menu actions share the same underlying handler (`context-menu.js`)
-  - Hide flow: sets `flags.quartermaster.hidden = true` on the item â€” inventory auto-excludes it, Loot Prep auto-picks it up via existing `updateItem` hook
+  - Hide flow: sets `flags.quartermaster.hidden = true` on the item — inventory auto-excludes it, Loot Prep auto-picks it up via existing `updateItem` hook
   - Re-hide drag: dragging an item from Shared Party Inventory onto the Loot Prep Hidden Items drop zone re-hides it without creating a copy
-  - Delete flow: DialogV2.confirm â†’ `deleteEmbeddedDocuments` â†’ `hidden.deleted` log entry
+  - Delete flow: DialogV2.confirm → `deleteEmbeddedDocuments` → `hidden.deleted` log entry
   - `scripts/context-menu.js`: `attachInventoryContextMenu`, `handleInventoryGMAction`
   - `scripts/test-step16.js` test harness
   - `api.contextMenu` namespace exposed
 
 
 ### Added
-- **Hidden Items â€” GM Loot Prep (build step 15):**
-  - `scripts/hidden-items.js`: `getHiddenItems`, `setItemHidden`, `revealItem`, `revealItems`, `deleteHiddenItem`, `stageHiddenItem` â€” all GM-only
+- **Hidden Items — GM Loot Prep (build step 15):**
+  - `scripts/hidden-items.js`: `getHiddenItems`, `setItemHidden`, `revealItem`, `revealItems`, `deleteHiddenItem`, `stageHiddenItem` — all GM-only
   - Loot Prep popup now shows a full Hidden Items section with thumbnail, name, qty, weight, and compendium source
   - Per-row Reveal and Delete buttons; Reveal Selected and Reveal All bulk actions with confirmation dialog
   - Drag-drop from compendium directories into the Hidden Items section stages items with the hidden flag set
@@ -308,7 +393,7 @@ Initial public release. Core feature set complete through build step 18.
   - `sanitizeItemForTransfer(sourceData, destActor, options)` is the main entry; returns a new object, never mutates inputs
   - Pre-generates destination `_id` via `foundry.utils.randomID(16)` so callers can compute the destination UUID before the create fires (required for the Claim-and-Commit pattern in step 8)
   - `buildItemUuid(actor, itemId)` composes world-actor item UUIDs
-  - Owner-specific state stripping: `equipped`, `attuned` (legacy boolean), `attunement` (numeric, 2 â†’ 1), `preparation.prepared`
+  - Owner-specific state stripping: `equipped`, `attuned` (legacy boolean), `attunement` (numeric, 2 → 1), `preparation.prepared`
   - Item characteristics preserved: quantity, weight, price, rarity, identified state, current charges, damage, properties
   - Module cache stripping: midi-qol runtime caches (advantage, disadvantage, lastSelectedTokenIds, macroCalls, cached), dae cached state, our own quartermaster flags (except `hidden` if `preserveHiddenFlag: true`)
   - Selective effect origin rewriting: effects whose origin matches the source item UUID (or starts with it for sub-references like `.ActiveEffect.X`) get their origin prefix swapped to the destination UUID; effects with unrelated origins are left untouched
@@ -320,8 +405,8 @@ Initial public release. Core feature set complete through build step 18.
   - Diagnostics: `size`, `peek`, `cachedActorIds`
   - `inventory-rendering.js` updated to consume `getRawTotals` instead of looping items inline on every render
   - `claim-commit.js`: durable two-phase transfer engine with direction-specific ordering
-  - **Egress (bag â†’ player):** delete source first, then create destination. Bag is the contended resource so atomic delete-first ensures only one race winner. If the create fails after the delete, the claim entry preserves the full item data for GM recovery
-  - **Ingress (player â†’ bag):** create destination first, then delete source. Bag is the safe accumulator so create-first avoids losing the item. If the delete fails, the item briefly duplicates and GM can manually reconcile
+  - **Egress (bag → player):** delete source first, then create destination. Bag is the contended resource so atomic delete-first ensures only one race winner. If the create fails after the delete, the claim entry preserves the full item data for GM recovery
+  - **Ingress (player → bag):** create destination first, then delete source. Bag is the safe accumulator so create-first avoids losing the item. If the delete fails, the item briefly duplicates and GM can manually reconcile
   - All transfers write three categories of log entries: `*_CLAIM` (intent, with full item data), `*_COMMIT` (success), `*_FAILED` (failure with stage and error). Same `requestId` ties them together
   - Sanitization runs BEFORE the claim write so the predicted destination UUID is in the log entry
   - `createEmbeddedDocuments` always called with `{ keepId: true }` so the predicted UUID holds
@@ -344,9 +429,9 @@ Initial public release. Core feature set complete through build step 18.
   - API additions: `test.runStep9Tests`, `test.cleanupStep9Fixtures`
 - **Currency change UI and dispatcher (build step 10):**
   - `currency-buttons.js`: button click handlers and amount-picker dialog
-  - Each currency tile now shows a +/âˆ’ button row below the value
+  - Each currency tile now shows a +/− button row below the value
   - Normal click opens a DialogV2 amount picker with quick-pick buttons (1, 5, 10, 25, 100) and a custom number input
-  - Shift+click skips the dialog and applies Â±1 immediately for fast small adjustments
+  - Shift+click skips the dialog and applies ±1 immediately for fast small adjustments
   - `socket-handler.js` `stubCurrencyChange` replaced with `realCurrencyChange` that resolves the backing actor, validates currency type and delta, checks for insufficient funds, writes claim/commit transaction log entries, and updates `system.currency.<type>`; no approval flow at this stage (approval ships in step 13)
   - Zero delta is a no-op success with `noop: true` in the result envelope, so the dispatcher path can be exercised in tests without mutating vault state
   - Error codes: `no-backing-actor`, `invalid-currency-type`, `invalid-delta`, `insufficient-funds` (with `currentBalance` and `requested` in the envelope for the UI to format)
@@ -355,7 +440,7 @@ Initial public release. Core feature set complete through build step 18.
   - Egress transfer toast wording fix (step 9 holdover): was "taken from {destName}" which referenced the wrong actor; now reads "given to {destName}" which correctly names the receiver
   - `test-step4.js` updates: test 2 changed to use `delta: 0` no-op since the stub is gone; test 6 (idempotency) switched to `CUSTOM_RESOURCE_CHANGE` (still stubbed) to keep it state-non-mutating
   - `test-step10.js`: 20+ integration tests covering add, remove, no-op zero delta, insufficient-funds rejection, invalid inputs, idempotency via duplicate requestId, and transaction log entry validation; snapshots vault currency at start and restores at end so the suite leaves no persistent effects
-  - CSS additions for the button row (subtle hover states, green tint for +, red tint for âˆ’) and the dialog (current-balance display, horizontal quick-pick row, custom-amount input)
+  - CSS additions for the button row (subtle hover states, green tint for +, red tint for −) and the dialog (current-balance display, horizontal quick-pick row, custom-amount input)
   - API additions: `test.runStep10Tests`, `test.cleanupStep10Fixtures`
 - **Transaction log query and formatting infrastructure (build step 11):**
   - `transaction-log-query.js`: read-side helpers built on top of the raw write layer; no document mutations
@@ -392,7 +477,7 @@ Initial public release. Core feature set complete through build step 18.
   - Log window: new "Denied" filter option in the status dropdown; denied entries render with `fa-ban` icon, warning-tinted phase badge, and red border accent like failures
   - `transaction-log-query.js`: `ENTRY_PHASES.DENIED` added; phase rank updated so denied groups display the denied entry as the representative; stats now include `byPhase.denied` count; `hasError` is true for denied entries so the row gets the warning visual
   - `test-step13.js`: 18 tests covering free / all-required / threshold modes, threshold boundary cases (below, at, above), negative deltas in threshold mode, threshold of 0 edge case, GM auto-approve in every mode, runtime threshold changes respected, and timeout config reads; settings snapshot/restore so the suite leaves no persistent change
-  - **Bug fix from step 9/12:** transaction log commit and failed entries now carry `userId`, `sourceActorName`, `sourceItemName`, and `destActorName`; previously only the claim entries had these fields, so the log window showed "(unknown item) â† vault" / "(source) to (destination)" for grouped operations because `groupByRequestId` picks the commit (highest phase rank) as the representative and the formatter fell back to placeholder text
+  - **Bug fix from step 9/12:** transaction log commit and failed entries now carry `userId`, `sourceActorName`, `sourceItemName`, and `destActorName`; previously only the claim entries had these fields, so the log window showed "(unknown item) ← vault" / "(source) to (destination)" for grouped operations because `groupByRequestId` picks the commit (highest phase rank) as the representative and the formatter fell back to placeholder text
   - API additions: `approvalPolicy` namespace, `test.runStep13Tests`
 - **Approval dialog close-detection fix (folded into step 14):**
   - The `close` config callback on V14 DialogV2 doesn't reliably fire when the user clicks the header X button or presses Escape; the dialog DOM is removed but the callback is skipped, leaving the approval Promise unresolved until the timeout countdown fires
@@ -402,11 +487,11 @@ Initial public release. Core feature set complete through build step 18.
 - **Custom resources (build step 14):**
   - `resources.js`: CRUD module for custom resources stored as a flag array on the backing actor; schema `{ id, name, icon, value, max, description, createdAt, order }`; GM-only writes; `applyDelta(id, delta)` validates bounds (insufficient-resource, max-exceeded) and returns a structured envelope
   - `socket-handler.js`: `stubCustomResourceChange` replaced with `realResourceChange` that validates the payload, calls `Resources.applyDelta`, writes claim/commit/failed transaction log entries, no approval flow at this stage (resources are GM-curated)
-  - `resource-buttons.js`: +/âˆ’ button handlers for the inventory popup; shift+click applies Â±1 immediately, normal click opens an amount picker dialog with quick-picks (1, 2, 3, 5, 10) and a custom number input; uses the closeDialogV2 hook for reliable close detection
+  - `resource-buttons.js`: +/− button handlers for the inventory popup; shift+click applies ±1 immediately, normal click opens an amount picker dialog with quick-picks (1, 2, 3, 5, 10) and a custom number input; uses the closeDialogV2 hook for reliable close detection
   - `apps/loot-prep-app.js`: rewritten from placeholder; Custom Resources section lists existing resources with icon, name, description, value/max display, edit and delete buttons; "Add Resource" button opens the create-or-edit dialog; auto-refresh hook listens for changes to the `customResources` flag
   - `apps/resource-edit-dialog.js`: dialog for creating or editing a resource with name, icon (with file picker via `foundry.applications.apps.FilePicker.implementation`), current value, max (blank = unbounded), and description; live icon preview as the path changes; validation prevents empty names; closeDialogV2 hook handles cancel paths reliably
   - `inventory-rendering.js`: `buildResources` updated to align with the new schema (was using old `imagePath` / `count` / `sortIndex` field names); display fields include `displayValue` (X or X/Y), `atMax` and `atZero` boolean flags for styling
-  - `templates/inventory.hbs`: resources section now shows +/âˆ’ buttons in each row, uses `displayValue` for X / Y formatting, has hover tooltip with description
+  - `templates/inventory.hbs`: resources section now shows +/− buttons in each row, uses `displayValue` for X / Y formatting, has hover tooltip with description
   - `templates/loot-prep.hbs`: rewritten with a Custom Resources section (header with Add button, list of rows with icon/name/desc/value/edit/delete) and a Hidden Items placeholder section for step 15
   - `styles/module.css`: added ~250 lines for resource rows (inventory popup), resource management UI (loot prep popup), and the resource edit dialog with icon picker control
   - Localization: existing `quartermaster.buttons.gmLootPrep` reused
@@ -419,6 +504,7 @@ Initial public release. Core feature set complete through build step 18.
 
 [Unreleased]: https://github.com/Lipton1010/quartermaster/compare/v0.1.15...HEAD
 [0.1.15]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.15
+[1.0.0]: https://github.com/Lipton1010/quartermaster/compare/v0.1.15...HEAD
 [0.1.11]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.11
 [0.1.10]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.10
 [0.1.9]: https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.9

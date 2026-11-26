@@ -1,6 +1,8 @@
 # Quartermaster
 
-A shared party inventory and resource manager for D&D 5e on Foundry Virtual Tabletop.
+Quartermaster is a system-agnostic shared party inventory and resource ledger for Foundry Virtual Tabletop.
+
+It gives a group one persistent vault for visible items, balances, resources, and an audit trail, plus a private GM staging area for unrevealed loot and recovery records. Quartermaster tracks what the party owns and how that changed over time; it does not replace map-based loot piles, merchants, or treasure chests.
 
 [Install in Foundry](#installation) · [Latest release](https://github.com/Lipton1010/quartermaster/releases/latest) · [Compatibility](#compatibility) · [Support development](https://ko-fi.com/paulmiscavage)
 
@@ -28,87 +30,94 @@ Player and character names in the transaction log have been anonymized.
 
 [Browse the screenshot gallery](screenshots/) · [Read the changelog](CHANGELOG.md)
 
-## When to use Quartermaster
+## v1.0 release-candidate status
 
-Quartermaster is a persistent party-state ledger. Its primary concern is *what the party currently owns and how that changed over time* — a shared inventory popup, a currency tile, a transaction log. If your group asks questions like "who picked up the wand of magic missiles after the fight in session 7?" or "how much gold did we have before we paid the innkeeper?", Quartermaster is built for that.
+This 1.0.0 test candidate incorporates the v0.1.15 release line. Its primary live target is Foundry 14.370 with D&D5e 6.1.1. The previous six-system/version matrix and v0.1.8 migration rehearsal used an earlier package. The current build needs a fresh v0.1.15 upgrade rehearsal and live client checks. See the [release gate](docs/RELEASE-GATE.md).
 
-It is not a replacement for, and does not compete with, modules that handle world loot on the map (drop-and-pick-up piles, merchant tokens, treasure chests). If you want immersive world loot, use a dedicated loot module like Item Piles alongside Quartermaster — they coexist cleanly (see Compatibility below).
+## System support
 
-A simple way to think about it:
+- **D&D 5e:** full native PP/GP/EP/SP/CP support, item quantity, weight, value, and identification metadata. Existing 500 lb default capacity behavior is preserved.
+- **Pathfinder 2e:** native coin support, loot actors, quantity, Bulk, value, identification metadata, and coin-item filtering. Quartermaster separates canonical coin Bulk from the Actor inventory aggregate so optional currency load is not counted twice. Coin Items inside Bulk-reducing containers can make that separation approximate; capacity enforcement is disabled initially, and this case remains a required live check.
+- **Other systems:** a safe generic adapter preserves complete Item data and supplies one editable `Currency` (`CUR`) custom balance. Unsupported weight, value, and identification fields are omitted instead of displayed as zero.
+- **Third-party integrations:** modules may register adapters during the `quartermaster.registerSystemAdapters` hook or through `game.modules.get("quartermaster").api.system.registerAdapter(...)`.
 
-- **World loot on the map** — what's in this chest, what does the shopkeeper sell — is a job for Item Piles or a similar module.
-- **Persistent party state** — what the party owns right now, what the party's currency is, who took what — is a job for Quartermaster.
-- **Both at once** is a supported setup.
+If a generic system exposes more than one usable Actor type, a GM chooses the vault type during setup. Quartermaster stores that choice for the world and fails safely when no compatible type exists.
 
 ## Features
 
-- Shared party inventory accessible from a sidebar button or optional scene token shortcut
-- Drag-and-drop item sharing between character sheets, the party stash, and compendiums
-- Multi-currency tracking with PP, GP, EP, SP, CP, and unlimited GM-defined custom currencies
-- Per-currency visibility, optional tile images, decimal balances, configurable exchange rates, and optional custom-currency weight
-- Configurable approval modes: free, threshold-based, or all-required — with timeout and audit trail
-- GM Loot Prep tab with folder organization and inherited folder/item notes for encounter locations
-- Currency loot staging for built-in and custom currencies, revealed directly into the shared balance
-- One-click or bulk loot reveal; Shift+click reveal posts a chat announcement
-- Drag items from Loot Prep or Shared Party Inventory directly to any character-sheet tab or an Actor-directory character entry to distribute loot
-- Custom counter resources (ammunition, charges, consumables) with CRUD UI
-- Sort-by dropdown: A–Z, By Type with section headers, Loot First, or Manual drag-to-reorder
-- Double-click items to open their sheet
-- Item value display (GP/SP/CP) on every row
-- GM settings to customize the inventory button/window name, add a subtle popup watermark image, hide prices from players, and enable an optional inventory shortcut token
-- Full transaction log with filtering, search, grouping by operation, and rollback reference
-- Capacity tracking (Bag of Holding 500 lb default, or unlimited)
-- Optional currency weight tracking
-- Per-user preferences (sort order, entry size, and hide zero balances)
+- Shared party inventory available from the Actors sidebar or optional scene shortcut token
+- Whole-document Item transfers between the vault and compatible Actors owned by the requesting user
+- Support for linked Actors and unlinked Token Actors through document UUIDs
+- D&D 5e and PF2e native currency, plus unlimited custom currencies
+- Configurable exchange rates, currency visibility, approval thresholds, and optional custom-currency load
+- Custom counter resources, inventory sorting, and transaction history
+- Directory-row and sheet-wide drops from the inventory or Loot Prep to compatible actors
+- GM Loot Prep with collapsible folders, inherited notes, staged currency, compendium imports, and bulk reveal
+- A GM-only staging Actor for hidden loot, notes, canonical logs, and failed-transfer recovery records
+- Capacity/load display only when the active system adapter can provide accurate metadata
+- Restartable v0.1.8-to-v1 storage migration that copies and verifies data before removing legacy values
+
+Whole Item documents or stacks transfer together. In D&D5e, remove an item from its container before moving it individually and empty a container before transferring it. During migration, mark the container and its contents for the same storage actor to preserve their links. Partial-stack transfers and automatic conversion of a world from one game system to another are outside the v1 scope.
 
 ## Requirements
 
-- Foundry VTT v13 or v14 (verified on v14.370)
-- D&D 5e system 5.0.0 or newer (verified on 6.1.1)
+- Foundry VTT v13 or v14
+- A game system with at least one Actor type capable of holding embedded Items
 
-D&D 5e 6.x requires Foundry v14.367 or newer. Quartermaster v0.1.15 was tested on Foundry v14.370 with D&D 5e 6.1.1.
+D&D5e 6.1.1 requires Foundry 14.367 or newer. Use a compatible D&D5e 5.x release for Foundry 13.
 
 ## Installation
 
-### Standard Installation (Recommended)
-Quartermaster is available directly through the Foundry VTT package browser. 
-1. In the Foundry VTT Setup menu, navigate to the **Add-on Modules** tab.
-2. Click **Install Module**.
-3. Search for **Quartermaster** and click **Install**.
+The [current published release](https://github.com/Lipton1010/quartermaster/releases/latest) is available in the Foundry package browser. For this local test build, extract the supplied ZIP into an isolated Foundry data path under `Data/modules/` and open a disposable copy of a v0.1.15 world. The ZIP already contains the `quartermaster/` directory.
 
-### Manual Installation
-If you need to install a specific build or are testing a pre-release version, paste this manifest URL into Foundry's "Install Module" dialog:
-`https://github.com/Lipton1010/quartermaster/releases/download/v0.1.15/module.json`
+## Migration and privacy
 
-## Macro integration
+On first GM startup, v1 creates a player-readable shared vault and a separate GM-only staging Actor. Legacy hidden Items, staged currency, folders, notes, and canonical logs are copied to private storage, verified, and only then removed from their legacy location. A schema marker advances only after the complete migration succeeds, so an interrupted migration can be run again safely. Recovery records are a new v1 concept written when a v1 transfer needs one; v0.1.8 has no recovery data to migrate.
 
-You can open the Shared Party Inventory from a Foundry macro or a landing-page trigger:
+Visible Items, balances, resources, redacted log entries, settings, and shortcut-token links remain available to players as before. Disabling Quartermaster does not delete either storage Actor.
 
-1. Create a new macro and set its type to **Script**.
-2. Paste the following code:
+Never test migration against the only copy of a production world. Clone the world or use a synthetic fixture.
+
+## Macro and integration API
+
+The documented inventory macro remains stable:
 
 ```js
 await game.modules.get("quartermaster").api.ui.openInventory();
 ```
 
-3. Run that macro directly, place it on the macro hotbar, or configure another module's trigger to execute it.
+The existing currency, resource, and transaction-log API facades remain available. Adapter integrations can register during setup:
 
-The macro works for both players and GMs while Quartermaster is active.
+```js
+Hooks.on("quartermaster.registerSystemAdapters", ({ registerAdapter }) => {
+  registerAdapter("my-system", myAdapter);
+});
+```
+
+An adapter registration is versioned and validated; invalid adapters are rejected without replacing the generic fallback.
+
+## Security model
+
+Player mutations use Foundry's authenticated query transport. Quartermaster fails closed if that transport is unavailable; it does not accept unauthenticated raw-socket mutation messages. The active GM re-checks sender identity, ownership, transfer direction, system compatibility, and storage boundaries before changing documents.
+
+Transfers preflight and create the destination Item before deleting the source. If reconciliation cannot complete, the private staging Actor retains a recovery record for a GM.
+
+## Development and release checks
+
+```text
+npm test
+npm run package
+```
+
+The package command builds the committed tree and emits a ZIP, manifest, SHA-256 checksum and contents list under `../../artifacts/system-agnostic/`. Test the packaged ZIP for the final GM/player and migration checks.
 
 ## Compatibility
 
-- **Tidy 5e Sheets:** Compatible. No integration shim required.
-- **Actor-directory integrations:** Quartermaster detects directory refreshes from other modules and re-applies its controls and private Vault suppression. Monk's Active Tile Triggers is included in the v0.1.9 live smoke-test matrix.
-- **Item Piles:** Compatible. Quartermaster and Item Piles solve different problems and coexist cleanly — different actors, different flag namespaces (`flags.quartermaster.*` vs `flags.item-piles.*`), and different drop hooks (`dropActorSheetData` vs `dropCanvasData`). Recommended setup: use Item Piles for world loot, merchant tokens, and bank vaults on the map; use Quartermaster for the party's persistent shared inventory, currency, and transaction history. **Do not enable Item Piles configuration on the Quartermaster Vault actor** — it is a private storage actor managed by Quartermaster and is not intended to be a pile.
-- **fvtt-party-resources:** Replaces this module. Uninstall party-resources before enabling Quartermaster.
-
-## Status
-
-**Current published release: [v0.1.15](https://github.com/Lipton1010/quartermaster/releases/tag/v0.1.15).** Core feature set complete: shared party inventory, drag-and-drop item sharing, configurable built-in and custom currency tracking with a selectable reference currency and optional GM approval flow, custom resources, GM Loot Prep (with collapsible folders, inherited notes, hidden items, currency staging, and compendium integration), full transaction log, per-user preferences, configurable display options, and an optional inventory shortcut token. Quartermaster is available through the Foundry package browser. See the release notes and changelog for version-specific changes.
+Quartermaster can coexist with map-loot modules such as Item Piles because it uses its own Actors and `flags.quartermaster` namespace. Do not configure either Quartermaster storage Actor as an Item Piles pile.
 
 ## License
 
-MIT — see LICENSE file.
+MIT — see [LICENSE](LICENSE).
 
 ## Author
 

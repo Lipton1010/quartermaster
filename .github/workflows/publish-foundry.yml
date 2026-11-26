@@ -1,0 +1,61 @@
+name: Publish reviewed Quartermaster release to Foundry
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub release tag whose module.json will be published
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    environment: foundry-publication
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Read and validate manifest metadata
+        id: manifest
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          VERSION="$(node -p "JSON.parse(require('fs').readFileSync('module.json','utf8')).version")"
+          MINIMUM="$(node -p "JSON.parse(require('fs').readFileSync('module.json','utf8')).compatibility.minimum")"
+          VERIFIED="$(node -p "JSON.parse(require('fs').readFileSync('module.json','utf8')).compatibility.verified")"
+          test "$RELEASE_TAG" = "v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "minimum=$MINIMUM" >> "$GITHUB_OUTPUT"
+          echo "verified=$VERIFIED" >> "$GITHUB_OUTPUT"
+      - name: Validate Foundry publication request
+        uses: djlechuck/foundryvtt-publish-package-action@d820ed8ad65408b23f9a80d2120aeeed142c1856 # v1.1.1
+        with:
+          token: ${{ secrets.FOUNDRY_API_TOKEN }}
+          dry-run: true
+          id: quartermaster
+          version: ${{ steps.manifest.outputs.version }}
+          manifest: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/module.json
+          notes: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}
+          compatibility-minimum: ${{ steps.manifest.outputs.minimum }}
+          compatibility-verified: ${{ steps.manifest.outputs.verified }}
+      - name: Publish to Foundry VTT
+        uses: djlechuck/foundryvtt-publish-package-action@d820ed8ad65408b23f9a80d2120aeeed142c1856 # v1.1.1
+        with:
+          token: ${{ secrets.FOUNDRY_API_TOKEN }}
+          id: quartermaster
+          version: ${{ steps.manifest.outputs.version }}
+          manifest: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/module.json
+          notes: https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag }}
+          compatibility-minimum: ${{ steps.manifest.outputs.minimum }}
+          compatibility-verified: ${{ steps.manifest.outputs.verified }}

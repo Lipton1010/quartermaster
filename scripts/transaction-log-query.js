@@ -21,6 +21,7 @@
  */
 
 import { MODULE_ID, SETTINGS, CHOICES } from "./constants.js";
+import { getActiveSystemAdapter } from "./system-adapters/registry.js";
 import * as TransactionLog from "./transaction-log.js";
 
 // ============================================================
@@ -251,8 +252,13 @@ function formatTransfer(entry, direction, phase) {
     description = `${description} (${phaseText})`;
   }
 
-  // Quantity from sanitized data if available
-  const qty = entry.itemData?.system?.quantity;
+  // Adapter-normalized quantity is recorded on new claims. Pending legacy
+  // claims can still be normalized without reading a system path in core.
+  let qty = entry.itemQuantity;
+  if (!Number.isFinite(qty) && entry.itemData) {
+    try { qty = getActiveSystemAdapter().normalizeItem(entry.itemData).quantity; }
+    catch { qty = null; }
+  }
   const amount = (typeof qty === "number" && qty > 1)
     ? `×${qty}`
     : null;

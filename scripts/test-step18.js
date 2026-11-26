@@ -9,7 +9,7 @@
  */
 
 import { MODULE_ID, MODULE_TITLE, FLAGS } from "./constants.js";
-import { getBackingActor } from "./backing-actor.js";
+import { getBackingActor, getStagingActor } from "./backing-actor.js";
 import { importCompendiumItem } from "./drag-drop.js";
 import { getHiddenItems } from "./hidden-items.js";
 import * as TransactionLog from "./transaction-log.js";
@@ -25,13 +25,19 @@ function pass(label) { _pass++; console.log(`%c  ✓ ${label}`, "color:#4caf50")
 function fail(label, detail) { _fail++; console.error(`  ✗ ${label}`, detail ?? ""); }
 function assert(cond, label, detail) { cond ? pass(label) : fail(label, detail); }
 
-function snapshotLog() {
-  return TransactionLog.readAll().map(e => ({ ...e }));
-}
-
-async function restoreLog(snapshot) {
-  const actor = getBackingActor();
-  if (actor) await actor.setFlag(MODULE_ID, FLAGS.TRANSACTION_LOG, snapshot);
+async function cleanupTestLog(itemId) {
+  const actor = getStagingActor();
+  if (!actor) return 0;
+  const entries = TransactionLog.readAll();
+  const kept = entries.filter(entry =>
+    !entry.itemName?.startsWith("QM-TEST-STEP18-") || (itemId && entry.itemId !== itemId)
+  );
+  const removed = entries.length - kept.length;
+  if (removed) {
+    await actor.setFlag(MODULE_ID, FLAGS.TRANSACTION_LOG, kept);
+    await TransactionLog.refreshPublicProjection();
+  }
+  return removed;
 }
 
 /**
@@ -58,26 +64,18 @@ function makeFakeCompendiumItem(name) {
 }
 
 async function cleanupTestItems() {
-  const actor = getBackingActor();
-  if (!actor) return 0;
-  const items = actor.items
-    .filter(i => (i.name ?? "").startsWith("QM-TEST-STEP18-"))
-    .map(i => i.id);
-  if (items.length) await actor.deleteEmbeddedDocuments("Item", items);
-  return items.length;
+  let count = 0;
+  for (const actor of [getBackingActor(), getStagingActor()].filter(Boolean)) {
+    const ids = actor.items.filter(i => i.name?.startsWith("QM-TEST-STEP18-")).map(i => i.id);
+    if (ids.length) await actor.deleteEmbeddedDocuments("Item", ids);
+    count += ids.length;
+  }
+  return count;
 }
 
 export async function cleanupStep18Fixtures() {
   if (!game.user.isGM) return 0;
-  const logSnap = snapshotLog();
-  const filtered = logSnap.filter(e =>
-    typeof e.requestId !== "string" || !e.requestId.startsWith("qm-import-")
-  );
-  const logRemoved = logSnap.length - filtered.length;
-  if (logRemoved > 0) {
-    const actor = getBackingActor();
-    if (actor) await actor.setFlag(MODULE_ID, FLAGS.TRANSACTION_LOG, filtered);
-  }
+  const logRemoved = await cleanupTestLog();
   const itemsRemoved = await cleanupTestItems();
   console.log(`${MODULE_TITLE} | Step 18 cleanup: ${logRemoved} log entries, ${itemsRemoved} items`);
   return logRemoved + itemsRemoved;
@@ -88,7 +86,6 @@ export async function cleanupStep18Fixtures() {
 // ============================================================
 
 async function testImportVisible() {
-  const logSnap = snapshotLog();
   let createdId = null;
   try {
     const actor = getBackingActor();
@@ -120,12 +117,11 @@ async function testImportVisible() {
     if (createdId) {
       try { await getBackingActor()?.deleteEmbeddedDocuments("Item", [createdId]); } catch {}
     }
-    await restoreLog(logSnap);
+    if (createdId) await cleanupTestLog(createdId);
   }
 }
 
 async function testImportHidden() {
-  const logSnap = snapshotLog();
   let createdId = null;
   try {
     const actor = getBackingActor();
@@ -135,8 +131,8 @@ async function testImportHidden() {
     assert(result.status === "success", "import hidden: status success", result);
     createdId = result.item?.id;
 
-    // Item should be on the actor WITH hidden flag
-    const doc = actor.items.get(createdId);
+    const doc = getStagingActor().items.get(createdId);
+    assert(!actor.items.get(createdId), "import hidden: stays off the shared actor");
     assert(!!doc, "import hidden: item exists on actor");
     const hiddenFlag = doc?.getFlag(MODULE_ID, FLAGS.HIDDEN);
     assert(hiddenFlag === true, "import hidden: hidden flag set");
@@ -159,9 +155,9 @@ async function testImportHidden() {
 
   } finally {
     if (createdId) {
-      try { await getBackingActor()?.deleteEmbeddedDocuments("Item", [createdId]); } catch {}
+      try { await getStagingActor()?.deleteEmbeddedDocuments("Item", [createdId]); } catch {}
     }
-    await restoreLog(logSnap);
+    if (createdId) await cleanupTestLog(createdId);
   }
 }
 
